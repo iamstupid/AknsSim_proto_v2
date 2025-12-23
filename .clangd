@@ -1,0 +1,8 @@
+CompileFlags:
+  CompilationDatabase: out/build/x64-debug
+  Add: ["-std=c++20", "-ID:/game dev/arksim_protov2/ArkSim_proto_v2/ECS-Lab/include", "-ID:/game dev/arksim_protov2/ArkSim_proto_v2/src/sim_core/include"]
+
+If:
+  PathMatch: .*ecs_lab/.*\\.hpp
+CompileFlags:
+  Add: [-xc++, -std=c++20]

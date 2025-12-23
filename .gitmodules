@@ -1,0 +1,3 @@
+[submodule "ECS-Lab"]
+	path = ECS-Lab
+	url = https://github.com/iamstupid/ECS-Lab.git
