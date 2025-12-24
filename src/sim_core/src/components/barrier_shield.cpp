@@ -4,7 +4,7 @@
 
 namespace arksim {
 
-void Barrier::bind(flecs::entity self_entity, flecs::entity object_entity) {
+void Barrier::bind(Entity self_entity, Entity object_entity) {
   self = self_entity;
   object = object_entity;
 }
@@ -16,8 +16,8 @@ void Barrier::UseBarrier(double discount) {
   }
 }
 
-void Barrier::step() {
-  if (!self.is_alive()) {
+void Barrier::step(World& world) {
+  if (!world.is_alive(self)) {
     return;
   }
   if (amount_decrease_per_tick > 0.0) {
@@ -27,31 +27,31 @@ void Barrier::step() {
     }
   }
   if (amount <= 0.0) {
-    if (auto* buff = self.try_get_mut<Buff>()) {
-      buff->destruct(self);
+    if (auto* buff = world.try_get<Buff>(self)) {
+      buff->destruct(world, self);
     } else {
-      self.destruct();
+      world.destroy(self);
     }
   }
 }
 
-void Shield::bind(flecs::entity self_entity, flecs::entity object_entity) {
+void Shield::bind(Entity self_entity, Entity object_entity) {
   self = self_entity;
   object = object_entity;
 }
 
-void Shield::UseShield(Damage dmg) {
+void Shield::UseShield(World& world, Damage dmg) {
   if (hp <= 0) {
     return;
   }
   --hp;
-  OnShieldBlock(object, dmg);
+  OnShieldBlock(world, object, dmg);
 }
 
-void Shield::step(Tick tick_rate) {
+void Shield::step(World& world, Tick tick_rate) {
   if (interval == 0 || delta_per_interval == 0 || max_hp <= 0) {
     if (hp <= 0 && auto_destruct) {
-      on_break();
+      on_break(world);
     }
     return;
   }
@@ -69,87 +69,91 @@ void Shield::step(Tick tick_rate) {
   }
 
   if (hp <= 0 && auto_destruct) {
-    on_break();
+    on_break(world);
   }
 }
 
-void Shield::on_break() {
+void Shield::on_break(World& world) {
   if (reset_timer_on_break && interval > 0) {
     interval_remain = interval;
   }
-  if (auto_destruct && self.is_alive()) {
-    if (auto* buff = self.try_get_mut<Buff>()) {
-      buff->destruct(self);
+  if (auto_destruct && world.is_alive(self)) {
+    if (auto* buff = world.try_get<Buff>(self)) {
+      buff->destruct(world, self);
     } else {
-      self.destruct();
+      world.destroy(self);
     }
   }
 }
 
-flecs::entity make_barrier(flecs::entity target,
+Entity make_barrier(World& world,
+                    Entity target,
                            Barrier barrier,
                            std::int64_t life_remain,
-                           flecs::entity giver,
+                           Entity giver,
                            int priority,
                            Damage::TypeMask mask) {
-  flecs::entity buff_entity = make_buff(target, life_remain, giver);
+  Entity buff_entity = make_buff(world, target, life_remain, giver);
 
   barrier.bind(buff_entity, target);
-  buff_entity.set<Barrier>(barrier);
+  world.add<Barrier>(buff_entity, barrier);
 
-  if (auto* stats = target.try_get_mut<DefStats>()) {
-    link_buff_damage_processor(buff_entity, target, *stats, priority,
+  if (auto* stats = world.try_get<DefStats>(target)) {
+    link_buff_damage_processor(world, buff_entity, target, *stats, priority,
                                make_barrier_proc(buff_entity, mask));
   }
 
   return buff_entity;
 }
 
-flecs::entity make_barrier(flecs::entity target,
+Entity make_barrier(World& world,
+                    Entity target,
                            double hp,
                            double hp_decay,
                            std::int64_t life_remain,
-                           flecs::entity giver,
+                           Entity giver,
                            int priority,
                            Damage::TypeMask mask) {
   Barrier barrier;
   barrier.amount = hp;
   barrier.amount_decrease_per_tick = hp_decay;
-  return make_barrier(target, barrier, life_remain, giver, priority, mask);
+  return make_barrier(world, target, barrier, life_remain, giver, priority, mask);
 }
 
-flecs::entity make_shield(flecs::entity target,
+Entity make_shield(World& world,
+                   Entity target,
                           Shield shield,
                           std::int64_t life_remain,
-                          flecs::entity giver,
+                          Entity giver,
                           int priority,
                           Damage::TypeMask mask) {
-  flecs::entity buff_entity = make_buff(target, life_remain, giver);
+  Entity buff_entity = make_buff(world, target, life_remain, giver);
 
   shield.bind(buff_entity, target);
   if (shield.max_hp <= 0) {
     shield.max_hp = shield.hp;
   }
-  buff_entity.set<Shield>(shield);
+  world.add<Shield>(buff_entity, shield);
 
-  if (auto* stats = target.try_get_mut<DefStats>()) {
-    link_buff_damage_processor(buff_entity, target, *stats, priority,
+  if (auto* stats = world.try_get<DefStats>(target)) {
+    link_buff_damage_processor(world, buff_entity, target, *stats, priority,
                                make_shield_proc(buff_entity, mask));
   }
 
   return buff_entity;
 }
 
-flecs::entity make_shield(flecs::entity target,
+Entity make_shield(World& world,
+                   Entity target,
                           int hp,
                           std::int64_t life_remain,
-                          flecs::entity giver,
+                          Entity giver,
                           int priority,
                           Damage::TypeMask mask) {
   Shield shield;
   shield.hp = hp;
   shield.max_hp = hp;
-  return make_shield(target, shield, life_remain, giver, priority, mask);
+  return make_shield(world, target, shield, life_remain, giver, priority, mask);
 }
 
 } // namespace arksim

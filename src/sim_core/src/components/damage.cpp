@@ -17,10 +17,10 @@ bool DamageProcessor::matches(const Damage& dmg) const {
   return (processed_types & dmg.type) == dmg.type;
 }
 
-double DamageProcessor::apply(flecs::entity self, bool purity, double dmg) const {
+double DamageProcessor::apply(World& world, SimState* sim, Entity self, bool purity, double dmg) const {
   switch (kind) {
     case Kind::Arts: {
-      const auto* stats = self.try_get<DefStats>();
+      const auto* stats = world.try_get<DefStats>(self);
       if (!stats) {
         return dmg;
       }
@@ -28,7 +28,7 @@ double DamageProcessor::apply(flecs::entity self, bool purity, double dmg) const
       return dmg * ratio;
     }
     case Kind::Physical: {
-      const auto* stats = self.try_get<DefStats>();
+      const auto* stats = world.try_get<DefStats>(self);
       if (!stats) {
         return dmg;
       }
@@ -38,7 +38,7 @@ double DamageProcessor::apply(flecs::entity self, bool purity, double dmg) const
       return std::clamp(reduced, min_value, dmg);
     }
     case Kind::Elemental: {
-      const auto* stats = self.try_get<DefStats>();
+      const auto* stats = world.try_get<DefStats>(self);
       if (!stats) {
         return dmg;
       }
@@ -49,19 +49,18 @@ double DamageProcessor::apply(flecs::entity self, bool purity, double dmg) const
       if (purity) {
         return dmg;
       }
-      if (!self.is_alive()) {
+      if (!world.is_alive(self)) {
         return dmg;
       }
-      auto* stats = self.try_get_mut<DefStats>();
+      auto* stats = world.try_get<DefStats>(self);
       if (!stats) {
         return dmg;
       }
-      auto* sim = static_cast<SimState*>(self.world().get_ctx());
       if (!sim) {
         return dmg;
       }
       if (sim->rng().next_f64() < value) {
-        stats->OnDodge(self, Damage{dmg, 0});
+        stats->OnDodge(world, self, Damage{dmg, 0});
         return 0.0;
       }
       return dmg;
@@ -73,10 +72,10 @@ double DamageProcessor::apply(flecs::entity self, bool purity, double dmg) const
     case Kind::DamageReduction:
       return dmg * (1.0 - value);
     case Kind::Barrier: {
-      if (!source.is_alive()) {
+      if (!world.is_alive(source)) {
         return dmg;
       }
-      auto* barrier = source.try_get_mut<Barrier>();
+      auto* barrier = world.try_get<Barrier>(source);
       if (!barrier) {
         return dmg;
       }
@@ -87,22 +86,20 @@ double DamageProcessor::apply(flecs::entity self, bool purity, double dmg) const
         if (barrier->amount < 0.0) {
           barrier->amount = 0.0;
         }
-        source.modified<Barrier>();
       }
       return next;
     }
     case Kind::Shield: {
-      if (!source.is_alive()) {
+      if (!world.is_alive(source)) {
         return dmg;
       }
-      auto* shield = source.try_get_mut<Shield>();
+      auto* shield = world.try_get<Shield>(source);
       if (!shield) {
         return dmg;
       }
       if (shield->hp > 0) {
         if (!purity) {
           --shield->hp;
-          source.modified<Shield>();
         }
         return 0.0;
       }
@@ -112,7 +109,6 @@ double DamageProcessor::apply(flecs::entity self, bool purity, double dmg) const
       if (lua_func_ref < 0) {
         return dmg;
       }
-      auto* sim = static_cast<SimState*>(self.world().get_ctx());
       if (!sim) {
         return dmg;
       }
@@ -121,7 +117,13 @@ double DamageProcessor::apply(flecs::entity self, bool purity, double dmg) const
         return dmg;
       }
       double result = dmg;
-      if (!vm->call_damage_processor(lua_func_ref, self.id(), purity, value, dmg, source.id(), result)) {
+      if (!vm->call_damage_processor(lua_func_ref,
+                                     self.entity_id,
+                                     purity,
+                                     value,
+                                     dmg,
+                                     source.entity_id,
+                                     result)) {
         return dmg;
       }
       return result;
@@ -132,8 +134,8 @@ double DamageProcessor::apply(flecs::entity self, bool purity, double dmg) const
   }
 }
 
-void DamageAggregator::add(flecs::entity name, int priority, DamageProcessor proc) {
-  add(name.id(), priority, std::move(proc));
+void DamageAggregator::add(Entity name, int priority, DamageProcessor proc) {
+  add(entity_key(name), priority, std::move(proc));
 }
 
 void DamageAggregator::add(std::uint64_t name, int priority, DamageProcessor proc) {
@@ -152,8 +154,8 @@ void DamageAggregator::add(std::uint64_t name, int priority, DamageProcessor pro
   dirty = true;
 }
 
-void DamageAggregator::add(flecs::entity name, DamageProcessor proc) {
-  add(name.id(), std::move(proc));
+void DamageAggregator::add(Entity name, DamageProcessor proc) {
+  add(entity_key(name), std::move(proc));
 }
 
 void DamageAggregator::add(std::uint64_t name, DamageProcessor proc) {
@@ -161,8 +163,8 @@ void DamageAggregator::add(std::uint64_t name, DamageProcessor proc) {
   add(name, priority, std::move(proc));
 }
 
-void DamageAggregator::erase(flecs::entity name) {
-  erase(name.id());
+void DamageAggregator::erase(Entity name) {
+  erase(entity_key(name));
 }
 
 void DamageAggregator::erase(std::uint64_t name) {
@@ -170,8 +172,8 @@ void DamageAggregator::erase(std::uint64_t name) {
   dirty = true;
 }
 
-bool DamageAggregator::update_value(flecs::entity name, double value) {
-  return update_value(name.id(), value);
+bool DamageAggregator::update_value(Entity name, double value) {
+  return update_value(entity_key(name), value);
 }
 
 bool DamageAggregator::update_value(std::uint64_t name, double value) {
@@ -183,8 +185,8 @@ bool DamageAggregator::update_value(std::uint64_t name, double value) {
   return true;
 }
 
-bool DamageAggregator::update_priority(flecs::entity name, int priority) {
-  return update_priority(name.id(), priority);
+bool DamageAggregator::update_priority(Entity name, int priority) {
+  return update_priority(entity_key(name), priority);
 }
 
 bool DamageAggregator::update_priority(std::uint64_t name, int priority) {
@@ -206,15 +208,15 @@ void DamageAggregator::clear() {
   dirty = false;
 }
 
-Damage DamageAggregator::operator()(flecs::entity self, Damage dmg) {
-  return apply(self, false, dmg);
+Damage DamageAggregator::operator()(World& world, SimState* sim, Entity self, Damage dmg) {
+  return apply(world, sim, self, false, dmg);
 }
 
-Damage DamageAggregator::try_do_damage(flecs::entity self, Damage dmg) {
-  return apply(self, true, dmg);
+Damage DamageAggregator::try_do_damage(World& world, SimState* sim, Entity self, Damage dmg) {
+  return apply(world, sim, self, true, dmg);
 }
 
-Damage DamageAggregator::apply(flecs::entity self, bool purity, Damage dmg) {
+Damage DamageAggregator::apply(World& world, SimState* sim, Entity self, bool purity, Damage dmg) {
   if (dmg.is_zero() || procs.empty()) {
     return dmg;
   }
@@ -228,7 +230,7 @@ Damage DamageAggregator::apply(flecs::entity self, bool purity, Damage dmg) {
     if (!proc.matches(dmg)) {
       continue;
     }
-    dmg.amount = proc.apply(self, purity, dmg.amount);
+    dmg.amount = proc.apply(world, sim, self, purity, dmg.amount);
   }
 
   return dmg;
@@ -255,19 +257,17 @@ void DamageAggregator::rebuild_sorted_if_needed() {
   dirty = false;
 }
 
-void make_hit(flecs::entity from, flecs::entity to, Damage dmg) {
-  auto* stats = to.try_get_mut<DefStats>();
+void make_hit(World& world, SimState* sim, Entity from, Entity to, Damage dmg) {
+  auto* stats = world.try_get<DefStats>(to);
   if (!stats) {
     return;
   }
 
-  stats->OnHit(to, from, dmg);
-  dmg = stats->dagr(to, dmg);
+  stats->OnHit(world, to, from, dmg);
+  dmg = stats->dagr(world, sim, to, dmg);
   if (!dmg.is_zero()) {
-    stats->OnDamage(to, from, dmg);
+    stats->OnDamage(world, to, from, dmg);
   }
-
-  to.modified<DefStats>();
 }
 
 DamageProcessor make_arts_proc() {
@@ -322,7 +322,7 @@ DamageProcessor make_damage_reduction_proc(double reduction, Damage::TypeMask ma
   return proc;
 }
 
-DamageProcessor make_barrier_proc(flecs::entity barrier_entity, Damage::TypeMask mask) {
+DamageProcessor make_barrier_proc(Entity barrier_entity, Damage::TypeMask mask) {
   DamageProcessor proc;
   proc.processed_types = mask;
   proc.source = barrier_entity;
@@ -330,7 +330,7 @@ DamageProcessor make_barrier_proc(flecs::entity barrier_entity, Damage::TypeMask
   return proc;
 }
 
-DamageProcessor make_shield_proc(flecs::entity shield_entity, Damage::TypeMask mask) {
+DamageProcessor make_shield_proc(Entity shield_entity, Damage::TypeMask mask) {
   DamageProcessor proc;
   proc.processed_types = mask;
   proc.source = shield_entity;
@@ -338,7 +338,7 @@ DamageProcessor make_shield_proc(flecs::entity shield_entity, Damage::TypeMask m
   return proc;
 }
 
-DamageProcessor make_lua_custom_proc(int lua_func_ref, Damage::TypeMask mask, flecs::entity source) {
+DamageProcessor make_lua_custom_proc(int lua_func_ref, Damage::TypeMask mask, Entity source) {
   DamageProcessor proc;
   proc.processed_types = mask;
   proc.kind = DamageProcessor::Kind::LuaCustom;

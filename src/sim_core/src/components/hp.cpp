@@ -2,8 +2,8 @@
 
 namespace arksim {
 
-void do_damage(flecs::entity object, double amount, flecs::entity source) {
-  auto* hp = object.try_get_mut<HP>();
+void do_damage(World& world, Entity object, double amount, Entity source) {
+  auto* hp = world.try_get<HP>(object);
   if (!hp) {
     return;
   }
@@ -20,14 +20,12 @@ void do_damage(flecs::entity object, double amount, flecs::entity source) {
 
   if (next < 0.0) {
     const double underflow = -next;
-    hp->OnUnderflow(object, source, underflow);
+    hp->OnUnderflow(world, object, source, underflow);
   }
-
-  object.modified<HP>();
 }
 
-void do_heal(flecs::entity object, double amount, flecs::entity source) {
-  auto* hp = object.try_get_mut<HP>();
+void do_heal(World& world, Entity object, double amount, Entity source) {
+  auto* hp = world.try_get<HP>(object);
   if (!hp) {
     return;
   }
@@ -43,10 +41,8 @@ void do_heal(flecs::entity object, double amount, flecs::entity source) {
 
   if (next >= total) {
     const double overflow = next - total;
-    hp->OnOverflow(object, source, overflow);
+    hp->OnOverflow(world, object, source, overflow);
   }
-
-  object.modified<HP>();
 }
 
 } // namespace arksim

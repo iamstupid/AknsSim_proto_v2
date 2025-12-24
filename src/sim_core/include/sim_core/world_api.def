@@ -1,0 +1,76 @@
+// X-macro list for World API forwarding.
+// Each entry should use one of:
+//   WORLD_FN(name, return_type, params_without_world, call_args_without_world...)
+//   SIM_FN(name, return_type, params_without_world_or_sim, call_args_without_world_or_sim...)
+
+WORLD_FN(do_damage,
+         void,
+         (Entity object, double amount, Entity source),
+         object, amount, source)
+
+WORLD_FN(do_heal,
+         void,
+         (Entity object, double amount, Entity source),
+         object, amount, source)
+
+SIM_FN(make_hit,
+       void,
+       (Entity from, Entity to, Damage dmg),
+       from, to, dmg)
+
+WORLD_FN(make_buff,
+         Entity,
+         (Entity target,
+          std::int64_t life_remain = -1,
+          Entity giver = {}),
+         target, life_remain, giver)
+
+WORLD_FN(link_buff_damage_processor,
+         void,
+         (Entity buff_entity,
+          Entity target,
+          DefStats& stats,
+          int priority,
+          DamageProcessor proc),
+         buff_entity, target, stats, priority, std::move(proc))
+
+WORLD_FN(make_barrier,
+         Entity,
+         (Entity target,
+          Barrier barrier,
+          std::int64_t life_remain = -1,
+          Entity giver = {},
+          int priority = 0,
+          Damage::TypeMask mask = Damage::ALL),
+         target, barrier, life_remain, giver, priority, mask)
+
+WORLD_FN(make_barrier,
+         Entity,
+         (Entity target,
+          double hp,
+          double hp_decay,
+          std::int64_t life_remain = -1,
+          Entity giver = {},
+          int priority = 0,
+          Damage::TypeMask mask = Damage::ALL),
+         target, hp, hp_decay, life_remain, giver, priority, mask)
+
+WORLD_FN(make_shield,
+         Entity,
+         (Entity target,
+          Shield shield,
+          std::int64_t life_remain = -1,
+          Entity giver = {},
+          int priority = 0,
+          Damage::TypeMask mask = Damage::ALL),
+         target, shield, life_remain, giver, priority, mask)
+
+WORLD_FN(make_shield,
+         Entity,
+         (Entity target,
+          int hp,
+          std::int64_t life_remain = -1,
+          Entity giver = {},
+          int priority = 0,
+          Damage::TypeMask mask = Damage::ALL),
+         target, hp, life_remain, giver, priority, mask)

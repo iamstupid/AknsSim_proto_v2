@@ -2,19 +2,18 @@
 
 #include <type_traits>
 
-#include <flecs.h>
-
+#include "sim_core/ecs.hpp"
 #include "sim_core/types.hpp"
 
 namespace arksim {
 
 struct EntityComponent {
-  flecs::world* world = nullptr;
-  flecs::entity entity{};
-  TriggerProcessor<flecs::world&, flecs::entity, EntityComponent&> OnDestroy;
+  World* world = nullptr;
+  Entity entity{};
+  TriggerProcessor<World&, Entity, EntityComponent&> OnDestroy;
   bool destroyed = false;
 
-  void bind(flecs::world& w, flecs::entity e) {
+  void bind(World& w, Entity e) {
     world = &w;
     entity = e;
   }
@@ -28,7 +27,7 @@ void Destroy(T& component) {
   if (component.world) {
     component.OnDestroy(*component.world, component.entity, component);
     if (component.destroyed) {
-      component.entity.destruct();
+      component.world->destroy(component.entity);
     }
   }
 }

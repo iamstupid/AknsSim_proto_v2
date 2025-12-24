@@ -4,20 +4,20 @@
 - Focus on `sim_core` first. `sim_game` is a test harness for a long time.
 - Deterministic simulation on x86_64 using floating-point math.
 - No multithreading and no WASM targets in the initial phase.
-- Use LuaJIT for scripting and Flecs for ECS.
+- Use LuaJIT for scripting and ECS-Lab for ECS.
 
 ## Project layout
 - `src/sim_core`: simulation core library (time, RNG, ECS, components).
 - `apps/sim_cli`: CLI entry point (data and batch-style workflows).
 - `apps/sim_game`: SDL-based game host (currently minimal).
 - `tests`: doctest-based unit tests.
-- `third_party/flecs-4.1.4`: vendored Flecs source.
+- `ECS-Lab`: ECS submodule (custom ECS implementation).
 
 ## Build and dependencies
 - CMake with presets (`x64-debug`, `x64-release`, etc.).
 - vcpkg toolchain for dependencies.
 - Dependencies:
-  - Flecs (ECS)
+  - ECS-Lab (ECS)
   - LuaJIT (scripting)
   - SDL2 (game host)
   - nlohmann-json (data)
@@ -31,12 +31,12 @@
 
 ## Determinism
 - Deterministic ordering is a first-class constraint for tests and replays.
-- `EffectQueue` drains effects sorted by `(priority, dst, src, seq)`.
+- `EffectQueue` drains effects in FIFO order.
 - RNG uses xoshiro256** with splitmix64 seeding for reproducibility.
 
 ## ECS integration
-- `SimState` owns a Flecs `world` and exposes it to systems/components.
-- Components are plain C++ structs stored on Flecs entities.
+- `SimState` owns an ECS-Lab `World` and exposes it to systems/components.
+- Components are plain C++ structs stored on ECS-Lab entities.
 
 ## Script integration
 - `ScriptVM` holds a LuaJIT state and binds a `SimState` as its world.

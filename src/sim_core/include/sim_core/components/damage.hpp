@@ -4,12 +4,13 @@
 #include <map>
 #include <vector>
 
-#include <flecs.h>
-
+#include "sim_core/ecs.hpp"
 #include "sim_core/rng.hpp"
 #include "sim_core/types.hpp"
 
 namespace arksim {
+
+class SimState;
 
 struct Damage {
   using TypeMask = std::uint32_t;
@@ -54,11 +55,11 @@ struct DamageProcessor {
   Damage::TypeMask processed_types = 0;
   double value = 0.0;
   Kind kind = Kind::None;
-  flecs::entity source{};
+  Entity source{};
   int lua_func_ref = -1;
 
   bool matches(const Damage& dmg) const;
-  double apply(flecs::entity self, bool purity, double dmg) const;
+  double apply(World& world, SimState* sim, Entity self, bool purity, double dmg) const;
 };
 
 constexpr int kDefaultRewritePriority = 100000;
@@ -70,26 +71,26 @@ struct DamageAggregator {
     DamageProcessor proc;
   };
 
-  void add(flecs::entity name, int priority, DamageProcessor proc);
+  void add(Entity name, int priority, DamageProcessor proc);
   void add(std::uint64_t name, int priority, DamageProcessor proc);
-  void add(flecs::entity name, DamageProcessor proc);
+  void add(Entity name, DamageProcessor proc);
   void add(std::uint64_t name, DamageProcessor proc);
-  void erase(flecs::entity name);
+  void erase(Entity name);
   void erase(std::uint64_t name);
-  bool update_value(flecs::entity name, double value);
+  bool update_value(Entity name, double value);
   bool update_value(std::uint64_t name, double value);
-  bool update_priority(flecs::entity name, int priority);
+  bool update_priority(Entity name, int priority);
   bool update_priority(std::uint64_t name, int priority);
   void clear();
 
-  Damage operator()(flecs::entity self, Damage dmg);
-  Damage try_do_damage(flecs::entity self, Damage dmg);
+  Damage operator()(World& world, SimState* sim, Entity self, Damage dmg);
+  Damage try_do_damage(World& world, SimState* sim, Entity self, Damage dmg);
 
   std::map<std::uint64_t, Entry> procs;
   std::vector<const Entry*> sorted;
 
 private:
-  Damage apply(flecs::entity self, bool purity, Damage dmg);
+  Damage apply(World& world, SimState* sim, Entity self, bool purity, Damage dmg);
   void rebuild_sorted_if_needed();
 
   bool dirty = false;
@@ -100,12 +101,12 @@ struct DefStats {
   BuffNum res;
   BuffNum eres;
   DamageAggregator dagr;
-  TriggerProcessor<flecs::entity, Damage> OnDodge;
-  TriggerProcessor<flecs::entity, flecs::entity, Damage> OnDamage;
-  TriggerProcessor<flecs::entity, flecs::entity, Damage> OnHit;
+  TriggerProcessor<World&, Entity, Damage> OnDodge;
+  TriggerProcessor<World&, Entity, Entity, Damage> OnDamage;
+  TriggerProcessor<World&, Entity, Entity, Damage> OnHit;
 };
 
-void make_hit(flecs::entity from, flecs::entity to, Damage dmg);
+void make_hit(World& world, SimState* sim, Entity from, Entity to, Damage dmg);
 
 DamageProcessor make_arts_proc();
 DamageProcessor make_phys_proc();
@@ -114,10 +115,10 @@ DamageProcessor make_dodge_proc(Damage::TypeMask mask = Damage::ALL_NO_DODGE);
 DamageProcessor make_rewrite_proc(double value, Damage::TypeMask mask = Damage::ALL);
 DamageProcessor make_multiplier_proc(double multiplier, Damage::TypeMask mask = Damage::ALL);
 DamageProcessor make_damage_reduction_proc(double reduction, Damage::TypeMask mask = Damage::ALL);
-DamageProcessor make_barrier_proc(flecs::entity barrier_entity, Damage::TypeMask mask = Damage::ALL);
-DamageProcessor make_shield_proc(flecs::entity shield_entity, Damage::TypeMask mask = Damage::ALL);
+DamageProcessor make_barrier_proc(Entity barrier_entity, Damage::TypeMask mask = Damage::ALL);
+DamageProcessor make_shield_proc(Entity shield_entity, Damage::TypeMask mask = Damage::ALL);
 DamageProcessor make_lua_custom_proc(int lua_func_ref,
                                      Damage::TypeMask mask = Damage::ALL,
-                                     flecs::entity source = {});
+                                     Entity source = {});
 
 } // namespace arksim

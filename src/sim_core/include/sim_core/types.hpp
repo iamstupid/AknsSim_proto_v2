@@ -10,6 +10,8 @@
 namespace arksim {
 
 using Tick = std::uint64_t;
+using f32 = float;
+using f64 = double;
 
 struct BuffNum {
   double base = 0.0;

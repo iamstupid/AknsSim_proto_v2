@@ -1,44 +1,67 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
+#include <queue>
 #include <vector>
 
+#include "sim_core/scratch_pad.hpp"
 #include "sim_core/types.hpp"
 
 namespace arksim {
 
-enum class EffectKind : std::uint8_t {
-  Damage = 0,
-  Heal = 1,
-  Move = 2,
-  Spawn = 3,
-  Despawn = 4,
-  Custom = 255
-};
+class SimState;
 
 struct Effect {
-  Tick tick = 0;
-  std::uint16_t priority = 0;
-  UnitId src{};
-  UnitId dst{};
-  std::uint32_t seq = 0;
-  EffectKind kind = EffectKind::Custom;
-  float value = 0.0f;
+  std::uint32_t type : 8 = 0;
+  std::uint32_t fnidx : 24 = 0;
+  std::uint32_t src = 0;
+  scratch_pad<24> param_buffer{};
 };
 
-struct EffectLess {
-  bool operator()(const Effect& a, const Effect& b) const;
+static_assert(sizeof(Effect) == 32, "Effect must be 32 bytes (cache-friendly fixed size).");
+
+struct EffectHandler {
+  using Handler = void (*)(SimState*, const Effect&);
+
+  explicit EffectHandler(SimState* sim = nullptr) : sim_(sim) {
+    handlers.fill(nullptr);
+  }
+
+  void bind(SimState* sim) { sim_ = sim; }
+
+  void set(std::uint8_t type, Handler handler) {
+    handlers[type] = handler;
+  }
+
+  void clear(std::uint8_t type) {
+    handlers[type] = nullptr;
+  }
+
+  void operator()(const Effect& effect) const {
+    if (!sim_) {
+      return;
+    }
+    if (auto handler = handlers[effect.type]) {
+      handler(sim_, effect);
+    }
+  }
+
+  std::array<Handler, 256> handlers{};
+
+private:
+  SimState* sim_ = nullptr;
 };
 
 class EffectQueue {
 public:
   void clear();
   void push(const Effect& effect);
-  std::vector<Effect> drain_sorted();
+  bool try_pop(Effect& out);
   std::size_t size() const { return effects_.size(); }
 
 private:
-  std::vector<Effect> effects_;
+  std::queue<Effect> effects_;
 };
 
 } // namespace arksim

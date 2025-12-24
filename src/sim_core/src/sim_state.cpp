@@ -11,9 +11,7 @@
 
 namespace arksim {
 
-SimState::SimState(std::uint64_t seed) : rng_(seed) {
-  world_.set_ctx(this);
-}
+SimState::SimState(std::uint64_t seed) : rng_(seed) {}
 
 void SimState::set_tick_rate(Tick tick_rate) {
   tick_rate_ = tick_rate;
@@ -77,16 +75,11 @@ void SimState::attach_script(ScriptVM* script) {
 }
 
 void SimState::step() {
-  effect_seq_ = 0;
   resolve();
-  const auto effects = queue_.drain_sorted();
-  commit(effects);
   tick_ += tick_rate_;
 }
 
 void SimState::emit_effect(Effect effect) {
-  effect.tick = tick_;
-  effect.seq = ++effect_seq_;
   queue_.push(effect);
 }
 
@@ -94,10 +87,6 @@ void SimState::resolve() {
   if (script_) {
     script_->call_on_tick(tick_);
   }
-}
-
-void SimState::commit(const std::vector<Effect>& /*effects*/) {
-  // TODO: apply effects to authoritative state.
 }
 
 std::uint64_t SimState::state_hash() const {
@@ -110,7 +99,6 @@ std::uint64_t SimState::state_hash() const {
   mix(static_cast<std::uint64_t>(tick_));
   mix(static_cast<std::uint64_t>(tick_rate_));
   mix(rng_.state());
-  mix(static_cast<std::uint64_t>(effect_seq_));
   mix(static_cast<std::uint64_t>(queue_.size()));
 
   return hash;

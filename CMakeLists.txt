@@ -13,10 +13,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 find_package(doctest CONFIG REQUIRED)
 find_package(LuaJIT REQUIRED)
 
-set(FLECS_STATIC ON CACHE BOOL "" FORCE)
-set(FLECS_SHARED OFF CACHE BOOL "" FORCE)
-set(FLECS_TESTS OFF CACHE BOOL "" FORCE)
-add_subdirectory(third_party/flecs-4.1.4 EXCLUDE_FROM_ALL)
+add_subdirectory(ECS-Lab)
 
 add_library(sim_core
   src/sim_core/src/rng.cpp
@@ -27,6 +24,7 @@ add_library(sim_core
   src/sim_core/src/components/buff.cpp
   src/sim_core/src/components/barrier_shield.cpp
   src/sim_core/src/components/hp.cpp
+  src/sim_core/src/components/position.cpp
 )
 target_include_directories(sim_core
   PUBLIC
@@ -34,7 +32,7 @@ target_include_directories(sim_core
 )
 target_link_libraries(sim_core
   PUBLIC
-    flecs::flecs_static
+    ecs_lab
     LuaJIT::LuaJIT
 )
 
@@ -70,5 +68,3 @@ target_link_libraries(sim_tests
     doctest::doctest
 )
 add_test(NAME sim_tests COMMAND sim_tests)
-
-add_subdirectory(ECS-Lab)

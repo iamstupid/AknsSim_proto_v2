@@ -1,7 +1,6 @@
 #pragma once
 
-#include <flecs.h>
-
+#include "sim_core/ecs.hpp"
 #include "sim_core/types.hpp"
 
 namespace arksim {
@@ -9,11 +8,11 @@ namespace arksim {
 struct HP {
   BuffNum total_hp;
   double ratio = 1.0; // actual hp is ratio * total_hp; ratio <= 1 in most cases
-  TriggerProcessor<flecs::entity, flecs::entity, double> OnUnderflow;
-  TriggerProcessor<flecs::entity, flecs::entity, double> OnOverflow;
+  TriggerProcessor<World&, Entity, Entity, double> OnUnderflow;
+  TriggerProcessor<World&, Entity, Entity, double> OnOverflow;
 };
 
-void do_damage(flecs::entity object, double amount, flecs::entity source);
-void do_heal(flecs::entity object, double amount, flecs::entity source);
+void do_damage(World& world, Entity object, double amount, Entity source);
+void do_heal(World& world, Entity object, double amount, Entity source);
 
 } // namespace arksim

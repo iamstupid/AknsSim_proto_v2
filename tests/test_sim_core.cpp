@@ -8,8 +8,10 @@
 #include "sim_core/components/buff.hpp"
 #include "sim_core/components/barrier_shield.hpp"
 #include "sim_core/components/hp.hpp"
+#include "sim_core/components/position.hpp"
 #include "sim_core/rng.hpp"
 #include "sim_core/sim_state.hpp"
+#include "sim_core/vec.hpp"
 
 TEST_CASE("Rng deterministic") {
   arksim::Rng r1(12345);
@@ -38,36 +40,32 @@ TEST_CASE("Rng uniform ranges") {
   }
 }
 
-TEST_CASE("Effect ordering") {
+TEST_CASE("Effect FIFO ordering") {
   arksim::EffectQueue queue;
 
   arksim::Effect a;
-  a.priority = 1;
-  a.dst = arksim::UnitId{2};
-  a.src = arksim::UnitId{1};
-  a.seq = 2;
+  a.type = 1;
+  a.src = 1;
 
   arksim::Effect b;
-  b.priority = 0;
-  b.dst = arksim::UnitId{3};
-  b.src = arksim::UnitId{1};
-  b.seq = 1;
+  b.type = 2;
+  b.src = 1;
 
   arksim::Effect c;
-  c.priority = 1;
-  c.dst = arksim::UnitId{2};
-  c.src = arksim::UnitId{1};
-  c.seq = 1;
+  c.type = 3;
+  c.src = 1;
 
   queue.push(a);
   queue.push(b);
   queue.push(c);
 
-  const auto sorted = queue.drain_sorted();
-  REQUIRE(sorted.size() == 3);
-  CHECK(sorted[0].priority == 0);
-  CHECK(sorted[1].seq == 1);
-  CHECK(sorted[2].seq == 2);
+  arksim::Effect out;
+  REQUIRE(queue.try_pop(out));
+  CHECK(out.type == 1);
+  REQUIRE(queue.try_pop(out));
+  CHECK(out.type == 2);
+  REQUIRE(queue.try_pop(out));
+  CHECK(out.type == 3);
 }
 
 TEST_CASE("SimState hash stable") {
@@ -143,8 +141,8 @@ TEST_CASE("TriggerProcessor ordering") {
 }
 
 TEST_CASE("EntityComponent destroy flow") {
-  flecs::world world;
-  flecs::entity e = world.entity();
+  arksim::World world;
+  arksim::Entity e = world.create();
 
   struct DemoComponent : arksim::EntityComponent {
     int value = 0;
@@ -153,7 +151,7 @@ TEST_CASE("EntityComponent destroy flow") {
   comp.bind(world, e);
 
   bool intercepted = false;
-  comp.OnDestroy.add(1, 0, [&](flecs::world&, flecs::entity, arksim::EntityComponent& c) {
+  comp.OnDestroy.add(1, 0, [&](arksim::World&, arksim::Entity, arksim::EntityComponent& c) {
     if (!intercepted) {
       c.destroyed = false;
       intercepted = true;
@@ -161,16 +159,16 @@ TEST_CASE("EntityComponent destroy flow") {
   });
 
   arksim::Destroy(comp);
-  CHECK(e.is_alive());
+  CHECK(world.is_alive(e));
 
   arksim::Destroy(comp);
-  CHECK(!e.is_alive());
+  CHECK(!world.is_alive(e));
 }
 
 TEST_CASE("HP damage/heal triggers") {
-  flecs::world world;
-  flecs::entity target = world.entity();
-  flecs::entity source = world.entity();
+  arksim::World world;
+  arksim::Entity target = world.create();
+  arksim::Entity source = world.create();
 
   arksim::HP hp;
   hp.total_hp = arksim::BuffNum(100.0);
@@ -179,67 +177,158 @@ TEST_CASE("HP damage/heal triggers") {
   bool underflow_called = false;
   bool overflow_called = false;
 
-  hp.OnUnderflow.add(1, 0, [&](flecs::entity, flecs::entity, double amount) {
+  hp.OnUnderflow.add(1, 0, [&](arksim::World&, arksim::Entity, arksim::Entity, double amount) {
     underflow_called = true;
     CHECK(amount == doctest::Approx(10.0));
   });
 
-  hp.OnOverflow.add(2, 0, [&](flecs::entity, flecs::entity, double amount) {
+  hp.OnOverflow.add(2, 0, [&](arksim::World&, arksim::Entity, arksim::Entity, double amount) {
     overflow_called = true;
     CHECK(amount == doctest::Approx(15.0));
   });
 
-  target.set<arksim::HP>(hp);
+  world.add<arksim::HP>(target, hp);
 
-  arksim::do_damage(target, 110.0, source);
+  arksim::do_damage(world, target, 110.0, source);
   CHECK(underflow_called);
 
-  arksim::do_heal(target, 125.0, source);
+  arksim::do_heal(world, target, 125.0, source);
   CHECK(overflow_called);
 }
 
 TEST_CASE("Buff life countdown") {
-  flecs::world world;
-  flecs::entity buff_entity = world.entity();
+  arksim::World world;
+  arksim::Entity buff_entity = world.create();
   arksim::Buff buff;
   buff.life_remain = 10;
-  buff.step(buff_entity, 4);
-  CHECK(buff_entity.is_alive());
-  buff.step(buff_entity, 4);
-  CHECK(buff_entity.is_alive());
-  buff.step(buff_entity, 4);
-  CHECK(!buff_entity.is_alive());
+  buff.step(world, buff_entity, 4);
+  CHECK(world.is_alive(buff_entity));
+  buff.step(world, buff_entity, 4);
+  CHECK(world.is_alive(buff_entity));
+  buff.step(world, buff_entity, 4);
+  CHECK(!world.is_alive(buff_entity));
 }
 
 TEST_CASE("Barrier and Shield usage") {
-  flecs::world world;
-  flecs::entity target = world.entity();
+  arksim::World world;
+  arksim::Entity target = world.create();
   arksim::DefStats stats{arksim::BuffNum(0.0), arksim::BuffNum(0.0), arksim::BuffNum(0.0)};
-  target.set<arksim::DefStats>(stats);
+  world.add<arksim::DefStats>(target, stats);
 
-  flecs::entity barrier_entity = arksim::make_barrier(target, 5.0, 0.0);
-  auto& barrier = barrier_entity.get_mut<arksim::Barrier>();
+  arksim::Entity barrier_entity = arksim::make_barrier(world, target, 5.0, 0.0);
+  auto& barrier = world.get<arksim::Barrier>(barrier_entity);
   barrier.UseBarrier(3.0);
   CHECK(barrier.amount == doctest::Approx(2.0));
-  CHECK(barrier_entity.is_alive());
+  CHECK(world.is_alive(barrier_entity));
   barrier.UseBarrier(3.0);
   CHECK(barrier.amount == doctest::Approx(0.0));
-  CHECK(barrier_entity.is_alive());
-  barrier.step();
-  CHECK(!barrier_entity.is_alive());
+  CHECK(world.is_alive(barrier_entity));
+  barrier.step(world);
+  CHECK(!world.is_alive(barrier_entity));
 
-  flecs::entity shield_entity = arksim::make_shield(target, 1);
-  auto& shield = shield_entity.get_mut<arksim::Shield>();
+  arksim::Entity shield_entity = arksim::make_shield(world, target, 1);
+  auto& shield = world.get<arksim::Shield>(shield_entity);
   bool blocked = false;
-  shield.OnShieldBlock.add(1, 0, [&](flecs::entity obj, arksim::Damage dmg) {
+  shield.OnShieldBlock.add(1, 0, [&](arksim::World&, arksim::Entity obj, arksim::Damage dmg) {
     blocked = true;
-    CHECK(obj == target);
+    CHECK(obj.entity_id == target.entity_id);
     CHECK(dmg.amount == doctest::Approx(7.0));
   });
-  shield.UseShield(arksim::Damage{7.0, arksim::Damage::physical});
+  shield.UseShield(world, arksim::Damage{7.0, arksim::Damage::physical});
   CHECK(blocked);
   CHECK(shield.hp == 0);
-  CHECK(shield_entity.is_alive());
-  shield.step(1);
-  CHECK(!shield_entity.is_alive());
+  CHECK(world.is_alive(shield_entity));
+  shield.step(world, 1);
+  CHECK(!world.is_alive(shield_entity));
+}
+
+TEST_CASE("vec basic ops") {
+  using arksim::dot;
+  using arksim::rotate;
+  using arksim::vec;
+
+  vec<arksim::f32> v{3.0f, 4.0f};
+  CHECK(v.length() == doctest::Approx(5.0f));
+
+  auto n = v.normalized();
+  CHECK(n.length() == doctest::Approx(1.0f));
+  CHECK(dot(n, n) == doctest::Approx(1.0f));
+
+  const vec<arksim::f32> x{1.0f, 0.0f};
+  const vec<arksim::f32> y{0.0f, 1.0f};
+  CHECK(arksim::cross(x, y) == doctest::Approx(1.0f));
+
+  const arksim::f32 half_pi = static_cast<arksim::f32>(3.14159265358979323846 / 2.0);
+  const auto r = rotate(x, half_pi);
+  CHECK(r.x == doctest::Approx(0.0f).epsilon(1e-5));
+  CHECK(r.y == doctest::Approx(1.0f).epsilon(1e-5));
+}
+
+TEST_CASE("Position homing uses idx+gen and rotates toward target") {
+  arksim::World world;
+  const arksim::Tick one_second = arksim::Tick{1} << 30;
+
+  arksim::Entity mover = world.create();
+  arksim::Entity target = world.create();
+
+  arksim::Position mover_pos;
+  mover_pos.pos = arksim::vec<arksim::f32>{0.0f, 0.0f};
+  mover_pos.dir = arksim::vec<arksim::f32>{0.0f, 1.0f}; // up
+  mover_pos.current_speed = 1.0f;
+  mover_pos.target_speed = 1.0f;
+  mover_pos.accel_speed = 0.0f;
+  mover_pos.homing_angle_accel = static_cast<arksim::f32>(3.14159265358979323846 / 2.0); // turn 90deg in 1s
+  mover_pos.set_homing_target(target);
+
+  arksim::Position target_pos;
+  target_pos.pos = arksim::vec<arksim::f32>{1.0f, 0.0f};
+  world.add<arksim::Position>(mover, mover_pos);
+  world.add<arksim::Position>(target, target_pos);
+
+  auto& p = world.get<arksim::Position>(mover);
+  p.step(world, one_second);
+
+  CHECK(p.pos.x == doctest::Approx(1.0f).epsilon(1e-5));
+  CHECK(p.pos.y == doctest::Approx(0.0f).epsilon(1e-5));
+}
+
+TEST_CASE("Position physical_step updates speed without target_speed clamp") {
+  arksim::World world;
+  const arksim::Tick one_second = arksim::Tick{1} << 30;
+
+  arksim::Entity e = world.create();
+  arksim::Position p;
+  p.pos = arksim::vec<arksim::f32>{0.0f, 0.0f};
+  p.dir = arksim::vec<arksim::f32>{1.0f, 0.0f};
+  p.current_speed = 1.0f;
+  p.target_speed = 0.0f; // should be ignored by physical_step
+  p.accel_speed = -2.0f;
+  p.set_step_mode(arksim::Position::StepMode::Physical);
+  world.add<arksim::Position>(e, p);
+
+  auto& ref = world.get<arksim::Position>(e);
+  ref.step(world, one_second);
+
+  CHECK(ref.pos.x == doctest::Approx(1.0f).epsilon(1e-5));
+  CHECK(ref.current_speed == doctest::Approx(0.0f).epsilon(1e-5));
+}
+
+TEST_CASE("Position stop_step stops movement") {
+  arksim::World world;
+  const arksim::Tick one_second = arksim::Tick{1} << 30;
+
+  arksim::Entity e = world.create();
+  arksim::Position p;
+  p.pos = arksim::vec<arksim::f32>{0.0f, 0.0f};
+  p.dir = arksim::vec<arksim::f32>{1.0f, 0.0f};
+  p.current_speed = 5.0f;
+  p.set_step_mode(arksim::Position::StepMode::Stop);
+  world.add<arksim::Position>(e, p);
+
+  auto& ref = world.get<arksim::Position>(e);
+  ref.step(world, one_second);
+
+  CHECK(ref.pos.x == doctest::Approx(0.0f).epsilon(1e-5));
+  CHECK(ref.pos.y == doctest::Approx(0.0f).epsilon(1e-5));
+  CHECK(ref.current_speed == doctest::Approx(0.0f).epsilon(1e-5));
 }
