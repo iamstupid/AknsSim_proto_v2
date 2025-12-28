@@ -2,6 +2,8 @@
 
 #include <utility>
 
+#include "sim_core/destroyed.hpp"
+
 namespace arksim {
 
 void Buff::add_target(Entity target) {
@@ -24,7 +26,7 @@ void Buff::step(World& world, Entity self, Tick tick_rate) {
 
 void Buff::destruct(World& world, Entity self) {
   OnDestruct(world, self, *this);
-  world.destroy(self);
+  mark_destroyed(world, self);
 }
 
 Entity make_buff(World& world, Entity target, std::int64_t life_remain, Entity giver) {

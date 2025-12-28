@@ -20,11 +20,21 @@ add_library(sim_core
   src/sim_core/src/effect.cpp
   src/sim_core/src/sim_state.cpp
   src/sim_core/src/script_vm.cpp
+  src/sim_core/src/map.cpp
+  src/sim_core/src/bresenham_cache.cpp
+  src/sim_core/src/path_map.cpp
+  src/sim_core/src/spatial_grid.cpp
+  src/sim_core/src/effects.cpp
+  src/sim_core/src/target_selector.cpp
   src/sim_core/src/components/damage.cpp
+  src/sim_core/src/components/attack.cpp
   src/sim_core/src/components/buff.cpp
   src/sim_core/src/components/barrier_shield.cpp
   src/sim_core/src/components/hp.cpp
   src/sim_core/src/components/position.cpp
+  src/sim_core/src/components/projectile.cpp
+  src/sim_core/src/components/route_move.cpp
+  src/sim_core/src/components/unbalance.cpp
 )
 target_include_directories(sim_core
   PUBLIC

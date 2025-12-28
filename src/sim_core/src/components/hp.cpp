@@ -18,7 +18,7 @@ void do_damage(World& world, Entity object, double amount, Entity source) {
   const double next = current - amount;
   hp->ratio = next / total;
 
-  if (next < 0.0) {
+  if (current > 0 && next <= 0.0) {
     const double underflow = -next;
     hp->OnUnderflow(world, object, source, underflow);
   }

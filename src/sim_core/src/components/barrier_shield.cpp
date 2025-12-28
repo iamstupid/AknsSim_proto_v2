@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "sim_core/destroyed.hpp"
+
 namespace arksim {
 
 void Barrier::bind(Entity self_entity, Entity object_entity) {
@@ -30,7 +32,7 @@ void Barrier::step(World& world) {
     if (auto* buff = world.try_get<Buff>(self)) {
       buff->destruct(world, self);
     } else {
-      world.destroy(self);
+      mark_destroyed(world, self);
     }
   }
 }
@@ -81,7 +83,7 @@ void Shield::on_break(World& world) {
     if (auto* buff = world.try_get<Buff>(self)) {
       buff->destruct(world, self);
     } else {
-      world.destroy(self);
+      mark_destroyed(world, self);
     }
   }
 }

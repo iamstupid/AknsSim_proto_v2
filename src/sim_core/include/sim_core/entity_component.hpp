@@ -2,6 +2,7 @@
 
 #include <type_traits>
 
+#include "sim_core/destroyed.hpp"
 #include "sim_core/ecs.hpp"
 #include "sim_core/types.hpp"
 
@@ -27,7 +28,7 @@ void Destroy(T& component) {
   if (component.world) {
     component.OnDestroy(*component.world, component.entity, component);
     if (component.destroyed) {
-      component.world->destroy(component.entity);
+      mark_destroyed(*component.world, component.entity);
     }
   }
 }

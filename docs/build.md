@@ -28,10 +28,23 @@ cmake --build out/build/x64-debug
 ctest --test-dir out/build/x64-debug -C Debug --output-on-failure
 ```
 
-If `cmake`/`ctest` are not in PATH, use the VS bundle:
-```
-D:\vs community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe
-D:\vs community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\ctest.exe
+## Windows: VS-bundled CMake (no PATH needed)
+If `cmake`/`ctest` are not in PATH, use the VS bundle. Since we use the Ninja generator, you also need Ninja in `PATH`.
+
+```powershell
+$cmake = 'D:\vs community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
+$ctest = 'D:\vs community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\ctest.exe'
+$vcvars = 'D:\vs community\VC\Auxiliary\Build\vcvars64.bat'
+$ninjaDir = 'D:\vs community\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja'
+
+# Configure
+cmd /c "call `"$vcvars`" && set `"PATH=$ninjaDir;%PATH%`" && `"$cmake`" --preset x64-debug"
+
+# Build
+cmd /c "call `"$vcvars`" && set `"PATH=$ninjaDir;%PATH%`" && `"$cmake`" --build out\\build\\x64-debug"
+
+# Test
+cmd /c "call `"$vcvars`" && set `"PATH=$ninjaDir;%PATH%`" && `"$ctest`" --test-dir out\\build\\x64-debug --output-on-failure"
 ```
 
 ## Common Issues

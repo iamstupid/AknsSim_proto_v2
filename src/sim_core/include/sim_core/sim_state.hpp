@@ -38,6 +38,7 @@ public:
   void step();
   void emit_effect(Effect effect);
   bool try_pop_effect(Effect& out) { return queue_.try_pop(out); }
+  bool process_one_effect();
 
   std::uint64_t state_hash() const;
 

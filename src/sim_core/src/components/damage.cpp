@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "sim_core/components/barrier_shield.hpp"
+#include "sim_core/components/hp.hpp"
 #include "sim_core/script_vm.hpp"
 #include "sim_core/sim_state.hpp"
 
@@ -268,6 +269,35 @@ void make_hit(World& world, SimState* sim, Entity from, Entity to, Damage dmg) {
   if (!dmg.is_zero()) {
     stats->OnDamage(world, to, from, dmg);
   }
+}
+
+void init_defstats(DefStats& stats) {
+  // Ensure base mitigation processors exist.
+  stats.dagr.add(kDefStatsArtsProcName, make_arts_proc());
+  stats.dagr.add(kDefStatsPhysProcName, make_phys_proc());
+  stats.dagr.add(kDefStatsElemProcName, make_elem_proc());
+
+  // HP is applied via an OnDamage hook so other triggers can observe/modify first.
+  if (!stats.OnDamage.contains(kDefStatsApplyHpOnDamageName)) {
+    stats.OnDamage.add(kDefStatsApplyHpOnDamageName,
+                       kDefStatsApplyHpOnDamagePriority,
+                       [](World& world, Entity self, Entity from, Damage dmg) {
+                         do_damage(world, self, dmg.amount, from);
+                       });
+  }
+}
+
+DefStats& ensure_defstats(World& world, Entity self) {
+  DefStats* stats = world.try_get<DefStats>(self);
+  if (!stats) {
+    DefStats init;
+    init.def = BuffNum(0.0);
+    init.res = BuffNum(0.0);
+    init.eres = BuffNum(0.0);
+    stats = &world.add<DefStats>(self, init);
+  }
+  init_defstats(*stats);
+  return *stats;
 }
 
 DamageProcessor make_arts_proc() {

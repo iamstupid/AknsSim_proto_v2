@@ -8,10 +8,14 @@
 #endif
 
 #include "sim_core/script_vm.hpp"
+#include "sim_core/destroyed.hpp"
+#include "sim_core/effects.hpp"
 
 namespace arksim {
 
-SimState::SimState(std::uint64_t seed) : rng_(seed) {}
+SimState::SimState(std::uint64_t seed) : rng_(seed) {
+  register_core_effect_handlers(effect_handler_);
+}
 
 void SimState::set_tick_rate(Tick tick_rate) {
   tick_rate_ = tick_rate;
@@ -75,12 +79,22 @@ void SimState::attach_script(ScriptVM* script) {
 }
 
 void SimState::step() {
+  cleanup_destroyed(world_);
   resolve();
   tick_ += tick_rate_;
 }
 
 void SimState::emit_effect(Effect effect) {
   queue_.push(effect);
+}
+
+bool SimState::process_one_effect() {
+  Effect effect;
+  if (!queue_.try_pop(effect)) {
+    return false;
+  }
+  effect_handler_(effect);
+  return true;
 }
 
 void SimState::resolve() {

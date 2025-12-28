@@ -108,6 +108,18 @@ struct DefStats {
 
 void make_hit(World& world, SimState* sim, Entity from, Entity to, Damage dmg);
 
+// Default DefStats wiring:
+// - installs base (arts/phys/elem) processors
+// - installs a high-priority OnDamage hook to apply damage to HP (if present)
+constexpr std::uint64_t kDefStatsArtsProcName = 0x617274735f70726full;    // "arts_pro"
+constexpr std::uint64_t kDefStatsPhysProcName = 0x706879735f70726full;    // "phys_pro"
+constexpr std::uint64_t kDefStatsElemProcName = 0x656c656d5f70726full;    // "elem_pro"
+constexpr std::uint64_t kDefStatsApplyHpOnDamageName = 0x6170706c795f6870ull; // "apply_hp"
+constexpr int kDefStatsApplyHpOnDamagePriority = 1'000'000;
+
+void init_defstats(DefStats& stats);
+DefStats& ensure_defstats(World& world, Entity self);
+
 DamageProcessor make_arts_proc();
 DamageProcessor make_phys_proc();
 DamageProcessor make_elem_proc();
