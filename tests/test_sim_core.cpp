@@ -1729,3 +1729,36 @@ TEST_CASE("Blocker releases enemy when out of range") {
   CHECK(!arksim::has_flags(world.get<arksim::Spatial>(enemy).flags, arksim::TypeFlags::Blocked));
   CHECK(blocker_comp.blocked.empty());
 }
+
+TEST_CASE("Hole kills non-flying after movement stage") {
+  arksim::SimState sim(1);
+  arksim::SimContext ctx;
+  ctx.reset_map(1, 1);
+  ctx.map.set_flag(arksim::TileCoord{0, 0}, arksim::TileFlags::Hole, true);
+
+  arksim::World& world = sim.world();
+
+  // Ground unit: should be marked Destroyed at end of frame, then removed next frame.
+  arksim::Entity ground = world.create();
+  world.add<arksim::Position>(ground, arksim::Position{arksim::vec<arksim::f32>{0.0f, 0.0f}});
+  arksim::RouteMove rm_ground;
+  rm_ground.mode = arksim::MoveMode::Ground;
+  world.add<arksim::RouteMove>(ground, rm_ground);
+
+  sim.step_frame(ctx);
+  CHECK(world.has<arksim::Destroyed>(ground));
+
+  sim.step_frame(ctx);
+  CHECK(!world.is_alive(ground));
+
+  // Flying unit: should not be killed by hole.
+  arksim::Entity flying = world.create();
+  world.add<arksim::Position>(flying, arksim::Position{arksim::vec<arksim::f32>{0.0f, 0.0f}});
+  arksim::RouteMove rm_fly;
+  rm_fly.mode = arksim::MoveMode::Air;
+  world.add<arksim::RouteMove>(flying, rm_fly);
+
+  sim.step_frame(ctx);
+  CHECK(world.is_alive(flying));
+  CHECK(!world.has<arksim::Destroyed>(flying));
+}

@@ -176,6 +176,57 @@ std::size_t SimState::step_frame(SimContext& ctx, std::size_t max_effects) {
     ub->step(world_, e, *pos, ctx.map, tick_rate_);
   }
 
+  // 1.5) Hole kill (after movement, before spatial rebuild):
+  // Any non-flying unit stepping on a Hole tile is marked Destroyed.
+  ctx.entities.clear();
+  world_.query<RouteMove, Position>([&](Entity e, RouteMove&, Position&) { ctx.entities.push_back(e); });
+  world_.query<Unbalance, Position>([&](Entity e, Unbalance&, Position&) { ctx.entities.push_back(e); });
+  sort_by_entity_id(ctx.entities);
+  ctx.entities.erase(std::unique(ctx.entities.begin(),
+                                 ctx.entities.end(),
+                                 [](Entity a, Entity b) { return a.entity_id == b.entity_id; }),
+                     ctx.entities.end());
+
+  for (Entity e : ctx.entities) {
+    if (!world_.is_alive(e) || world_.has<Destroyed>(e)) {
+      continue;
+    }
+
+    const auto* pos = world_.try_get<Position>(e);
+    if (!pos) {
+      continue;
+    }
+
+    // Determine whether the unit is flying (immune to holes).
+    bool is_flying = false;
+    if (const auto* rm = world_.try_get<RouteMove>(e)) {
+      is_flying = (rm->mode == MoveMode::Air);
+    } else if (const auto* ub = world_.try_get<Unbalance>(e)) {
+      is_flying = (ub->mode == MoveMode::Air);
+    }
+    if (const auto* sp = world_.try_get<Spatial>(e)) {
+      if (has_flags(sp->flags, TypeFlags::Air | TypeFlags::Flight)) {
+        is_flying = true;
+      }
+    }
+    if (is_flying) {
+      continue;
+    }
+
+    vec<f32> cursor_pos = pos->pos;
+    if (const auto* rm = world_.try_get<RouteMove>(e)) {
+      cursor_pos = pos->pos + rm->cursor_offset;
+    }
+
+    const TileCoord t = Map::tile_at(cursor_pos);
+    if (!ctx.map.in_bounds(t)) {
+      continue;
+    }
+    if (ctx.map.is_hole(t)) {
+      mark_destroyed(world_, e);
+    }
+  }
+
   // 2) Spatial rebuild (Position/Area/Spatial).
   ctx.spatial.rebuild(world_);
 
