@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sim_core/types.hpp"
+#include "sim_core/core/types.hpp"
 
 namespace arksim {
 

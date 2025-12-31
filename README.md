@@ -19,6 +19,11 @@ cmake --preset x64-debug
 cmake --build out/build/x64-debug
 ```
 
+To build the minimal SDL host (`sim_game`), configure with:
+```powershell
+cmake --preset x64-debug -DARKSIM_BUILD_GAME=ON
+```
+
 4) Test:
 ```powershell
 ctest --test-dir out/build/x64-debug -C Debug --output-on-failure

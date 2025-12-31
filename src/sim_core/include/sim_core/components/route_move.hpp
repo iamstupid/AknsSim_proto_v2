@@ -4,10 +4,10 @@
 #include <cstdint>
 #include <vector>
 
-#include "sim_core/ecs.hpp"
-#include "sim_core/map.hpp"
-#include "sim_core/types.hpp"
-#include "sim_core/vec.hpp"
+#include "sim_core/ecs/ecs.hpp"
+#include "sim_core/nav/map.hpp"
+#include "sim_core/core/types.hpp"
+#include "sim_core/core/vec.hpp"
 
 namespace arksim {
 

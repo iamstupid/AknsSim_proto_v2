@@ -5,8 +5,9 @@
 
 #include <nlohmann/json.hpp>
 
-#include "sim_core/script_vm.hpp"
-#include "sim_core/sim_state.hpp"
+#include "sim_core/runtime/sim_context.hpp"
+#include "sim_core/scripting/script_vm.hpp"
+#include "sim_core/runtime/sim_state.hpp"
 
 namespace {
 
@@ -87,6 +88,7 @@ int main(int argc, char** argv) {
   }
 
   arksim::SimState sim(config.seed);
+  arksim::SimContext ctx;
   arksim::ScriptVM script_vm;
 
   if (!config.script.empty()) {
@@ -98,7 +100,7 @@ int main(int argc, char** argv) {
   }
 
   for (std::uint64_t i = 0; i < config.ticks; ++i) {
-    sim.step();
+    sim.step_frame(ctx);
     if (config.hash_every > 0 && (i + 1) % config.hash_every == 0) {
       std::cout << "tick=" << sim.tick() << " hash=" << sim.state_hash() << "\n";
     }

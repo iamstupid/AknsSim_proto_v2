@@ -3,9 +3,9 @@
 #include <cstdint>
 #include <vector>
 
-#include "sim_core/ecs.hpp"
+#include "sim_core/ecs/ecs.hpp"
 #include "sim_core/components/damage.hpp"
-#include "sim_core/types.hpp"
+#include "sim_core/core/types.hpp"
 
 namespace arksim {
 

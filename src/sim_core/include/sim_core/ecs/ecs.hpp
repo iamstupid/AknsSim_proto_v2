@@ -8,7 +8,7 @@ namespace arksim {
 
 using World = ecs_lab::World;
 using Entity = ecs_lab::Entity;
-using EntityProxy = ecs_lab::EntityProxy;
+using EntityProxy = ecs_lab::EntityProxyRef;
 
 inline std::uint64_t entity_key(Entity e) {
   // Stable identifier for "name"/key usage (e.g. DamageAggregator, TriggerProcessor).

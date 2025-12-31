@@ -5,9 +5,9 @@
 #include <cstdint>
 
 #include "sim_core/components/position.hpp"
-#include "sim_core/map.hpp"
-#include "sim_core/types.hpp"
-#include "sim_core/vec.hpp"
+#include "sim_core/nav/map.hpp"
+#include "sim_core/core/types.hpp"
+#include "sim_core/core/vec.hpp"
 
 namespace arksim {
 

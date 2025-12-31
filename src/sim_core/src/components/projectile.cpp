@@ -7,13 +7,17 @@
 #include "sim_core/components/area.hpp"
 #include "sim_core/components/destroyed.hpp"
 #include "sim_core/components/position.hpp"
-#include "sim_core/destroyed.hpp"
-#include "sim_core/effects.hpp"
-#include "sim_core/sim_state.hpp"
-#include "sim_core/spatial_grid.hpp"
+#include "sim_core/ecs/destroyed.hpp"
+#include "sim_core/effects/effects.hpp"
+#include "sim_core/runtime/sim_state.hpp"
+#include "sim_core/spatial/spatial_grid.hpp"
 
 namespace arksim {
 namespace {
+
+inline void sort_by_entity_id(std::vector<Entity>& v) {
+  std::sort(v.begin(), v.end(), [](Entity a, Entity b) { return a.entity_id < b.entity_id; });
+}
 
 inline f32 area_bound_radius(const Area& area) {
   if (area.type == Area::Type::Circle) {
@@ -120,7 +124,12 @@ void Projectile::set_target(Entity target) {
   target_gen = target.gen;
 }
 
-void Projectile::step(World& world, SimState& sim, Entity self, const SpatialIndex& spatial, Tick tick_rate) {
+void Projectile::step(World& world,
+                      SimState& sim,
+                      Entity self,
+                      const SpatialIndex& spatial,
+                      Tick tick_rate,
+                      Scratch& scratch) {
   if (!active) {
     return;
   }
@@ -167,13 +176,12 @@ void Projectile::step(World& world, SimState& sim, Entity self, const SpatialInd
   const vec<f32> proj_center = proj_pos->pos;
   const f32 proj_bound = area_bound_radius(*proj_area);
 
-  std::vector<SpatialEntry> candidates;
-
   auto collect_overlapping = [&](std::vector<Entity>& out) {
     out.clear();
-    candidates.clear();
-    spatial.occupation.collect_circle_intersect(proj_center, proj_bound, required, candidates);
-    for (const SpatialEntry& e : candidates) {
+    scratch.candidates.clear();
+    spatial.occupation.collect_circle_intersect(proj_center, proj_bound, required, scratch.candidates);
+    out.reserve(scratch.candidates.size());
+    for (const SpatialEntry& e : scratch.candidates) {
       if (e.entity.entity_idx == self.entity_idx && e.entity.gen == self.gen) {
         continue;
       }
@@ -186,12 +194,11 @@ void Projectile::step(World& world, SimState& sim, Entity self, const SpatialInd
         out.push_back(e.entity);
       }
     }
-    std::sort(out.begin(), out.end(), [](Entity a, Entity b) { return a.entity_id < b.entity_id; });
-    out.erase(std::unique(out.begin(), out.end(), [](Entity a, Entity b) { return a.entity_id == b.entity_id; }),
-              out.end());
+    sort_by_entity_id(out);
   };
 
-  std::vector<Entity> hit_targets;
+  std::vector<Entity>& hit_targets = scratch.hit_targets;
+  hit_targets.clear();
 
   if (target_idx != ecs_lab::kInvalidIndex && target_gen != 0) {
     const Entity t = world.resolve_idx_gen(target_idx, target_gen);
@@ -243,12 +250,12 @@ void Projectile::step(World& world, SimState& sim, Entity self, const SpatialInd
 
   if (hit_shape == HitShape::AoeCircle) {
     const f32 r = std::max(aoe_radius, 0.0f);
-    std::vector<SpatialEntry> aoe;
-    spatial.occupation.collect_circle_intersect(proj_center, r, required, aoe);
+    scratch.candidates.clear();
+    spatial.occupation.collect_circle_intersect(proj_center, r, required, scratch.candidates);
 
     hit_targets.clear();
-    hit_targets.reserve(aoe.size());
-    for (const SpatialEntry& e : aoe) {
+    hit_targets.reserve(scratch.candidates.size());
+    for (const SpatialEntry& e : scratch.candidates) {
       const auto* tgt_pos = world.try_get<Position>(e.entity);
       const auto* tgt_area = world.try_get<Area>(e.entity);
       if (!tgt_pos || !tgt_area) {
@@ -260,22 +267,16 @@ void Projectile::step(World& world, SimState& sim, Entity self, const SpatialInd
       hit_targets.push_back(e.entity);
     }
 
-    std::sort(hit_targets.begin(), hit_targets.end(), [](Entity a, Entity b) { return a.entity_id < b.entity_id; });
-    hit_targets.erase(
-        std::unique(hit_targets.begin(), hit_targets.end(), [](Entity a, Entity b) { return a.entity_id == b.entity_id; }),
-        hit_targets.end());
+    sort_by_entity_id(hit_targets);
   } else if (hit_shape == HitShape::AoeTiles) {
-    std::vector<SpatialEntry> aoe;
-    spatial.occupation.collect_tiles(aoe_tiles, required, aoe);
+    scratch.candidates.clear();
+    spatial.occupation.collect_tiles(aoe_tiles, required, scratch.candidates);
     hit_targets.clear();
-    hit_targets.reserve(aoe.size());
-    for (const SpatialEntry& e : aoe) {
+    hit_targets.reserve(scratch.candidates.size());
+    for (const SpatialEntry& e : scratch.candidates) {
       hit_targets.push_back(e.entity);
     }
-    std::sort(hit_targets.begin(), hit_targets.end(), [](Entity a, Entity b) { return a.entity_id < b.entity_id; });
-    hit_targets.erase(
-        std::unique(hit_targets.begin(), hit_targets.end(), [](Entity a, Entity b) { return a.entity_id == b.entity_id; }),
-        hit_targets.end());
+    sort_by_entity_id(hit_targets);
   }
 
   for (Entity t : hit_targets) {
@@ -290,6 +291,11 @@ void Projectile::step(World& world, SimState& sim, Entity self, const SpatialInd
   if (consume_on_hit) {
     mark_destroyed(world, self);
   }
+}
+
+void Projectile::step(World& world, SimState& sim, Entity self, const SpatialIndex& spatial, Tick tick_rate) {
+  static thread_local Scratch scratch;
+  step(world, sim, self, spatial, tick_rate, scratch);
 }
 
 } // namespace arksim

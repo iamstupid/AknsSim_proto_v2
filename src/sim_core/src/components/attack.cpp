@@ -6,7 +6,7 @@
 
 #include "sim_core/components/destroyed.hpp"
 #include "sim_core/components/position.hpp"
-#include "sim_core/sim_state.hpp"
+#include "sim_core/runtime/sim_state.hpp"
 
 namespace arksim {
 
@@ -132,7 +132,8 @@ bool Attack::scan_(World& world,
                    const SpatialIndex& spatial,
                    TargetSelectorScratch& scratch,
                    bool update_cache) {
-  scratch.candidates.clear();
+  std::vector<SpatialEntry>& candidates = update_cache ? cached_candidates : scratch.candidates;
+  candidates.clear();
 
   const auto* pos = world.try_get<Position>(self);
   if (!pos) {
@@ -166,28 +167,24 @@ bool Attack::scan_(World& world,
       if (!range_tiles.empty()) {
         tiles = std::span<const TileCoord>(range_tiles.data(), range_tiles.size());
       }
-      grid->collect_tiles(tiles, required, scratch.candidates);
+      grid->collect_tiles(tiles, required, candidates);
       break;
     }
     case TargetRange::Kind::Circle: {
       if (range_grid == TargetRange::Grid::Occupation && occupation_circle_intersect) {
-        spatial.occupation.collect_circle_intersect(center, range_radius, required, scratch.candidates);
+        spatial.occupation.collect_circle_intersect(center, range_radius, required, candidates);
       } else {
-        grid->collect_circle(center, range_radius, required, scratch.candidates);
+        grid->collect_circle(center, range_radius, required, candidates);
       }
       break;
     }
-  }
-
-  if (update_cache) {
-    cached_candidates = scratch.candidates;
   }
 
   // Valid target check: apply arranger filters (but avoid selecting a large set).
   TargetArranger check = arranger;
   check.source = self;
   check.max_targets = 1;
-  check.arrange(world, scratch.candidates, scratch);
+  check.arrange(world, candidates, scratch);
   return !scratch.targets.empty();
 }
 

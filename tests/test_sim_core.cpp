@@ -4,10 +4,10 @@
 #include <algorithm>
 #include <vector>
 
-#include "sim_core/effect.hpp"
-#include "sim_core/destroyed.hpp"
-#include "sim_core/effects.hpp"
-#include "sim_core/entity_component.hpp"
+#include "sim_core/effects/effect.hpp"
+#include "sim_core/ecs/destroyed.hpp"
+#include "sim_core/effects/effects.hpp"
+#include "sim_core/ecs/entity_component.hpp"
 #include "sim_core/components/area.hpp"
 #include "sim_core/components/attack.hpp"
 #include "sim_core/components/attack_power.hpp"
@@ -20,14 +20,14 @@
 #include "sim_core/components/route_move.hpp"
 #include "sim_core/components/spatial.hpp"
 #include "sim_core/components/unbalance.hpp"
-#include "sim_core/bresenham_cache.hpp"
-#include "sim_core/map.hpp"
-#include "sim_core/path_map.hpp"
-#include "sim_core/rng.hpp"
-#include "sim_core/sim_state.hpp"
-#include "sim_core/spatial_grid.hpp"
-#include "sim_core/target_selector.hpp"
-#include "sim_core/vec.hpp"
+#include "sim_core/nav/bresenham_cache.hpp"
+#include "sim_core/nav/map.hpp"
+#include "sim_core/nav/path_map.hpp"
+#include "sim_core/core/rng.hpp"
+#include "sim_core/runtime/sim_state.hpp"
+#include "sim_core/spatial/spatial_grid.hpp"
+#include "sim_core/spatial/target_selector.hpp"
+#include "sim_core/core/vec.hpp"
 
 TEST_CASE("Rng deterministic") {
   arksim::Rng r1(12345);

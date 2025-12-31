@@ -1,17 +1,19 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
-#include "sim_core/effect.hpp"
-#include "sim_core/ecs.hpp"
-#include "sim_core/rng.hpp"
-#include "sim_core/types.hpp"
-#include "sim_core/world_api.hpp"
+#include "sim_core/effects/effect.hpp"
+#include "sim_core/ecs/ecs.hpp"
+#include "sim_core/core/rng.hpp"
+#include "sim_core/core/types.hpp"
+#include "sim_core/scripting/world_api.hpp"
 
 namespace arksim {
 
 class ScriptVM;
+struct SimContext;
 
 class SimState {
 public:
@@ -36,9 +38,13 @@ public:
   const EffectHandler& effect_handler() const { return effect_handler_; }
 
   void step();
+  // Step one simulation frame using a deterministic core pipeline (movement -> spatial -> combat -> effects).
+  // Returns number of effects processed in this frame (clamped by max_effects).
+  std::size_t step_frame(SimContext& ctx, std::size_t max_effects = 100'000);
   void emit_effect(Effect effect);
   bool try_pop_effect(Effect& out) { return queue_.try_pop(out); }
   bool process_one_effect();
+  std::size_t process_all_effects(std::size_t max_effects = 100'000);
 
   std::uint64_t state_hash() const;
 

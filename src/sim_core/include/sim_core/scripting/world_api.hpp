@@ -2,7 +2,7 @@
 
 #include <utility>
 
-#include "sim_core/ecs.hpp"
+#include "sim_core/ecs/ecs.hpp"
 #include "sim_core/components/barrier_shield.hpp"
 #include "sim_core/components/buff.hpp"
 #include "sim_core/components/damage.hpp"
@@ -33,7 +33,7 @@ struct WorldApi {
   ret name params { return ::arksim::name(world, __VA_ARGS__); }
 #define SIM_FN(name, ret, params, ...) \
   ret name params { return ::arksim::name(world, sim, __VA_ARGS__); }
-#include "sim_core/world_api.def"
+#include "sim_core/scripting/world_api.def"
 #undef SIM_FN
 #undef WORLD_FN
 };

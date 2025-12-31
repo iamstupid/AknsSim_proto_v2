@@ -13,6 +13,11 @@ Use presets (recommended):
 cmake --preset x64-debug
 ```
 
+To build the minimal SDL host (`sim_game`), enable:
+```powershell
+cmake --preset x64-debug -DARKSIM_BUILD_GAME=ON
+```
+
 If you need to specify the vcpkg toolchain manually:
 ```powershell
 cmake -S . -B out/build/x64-debug -DCMAKE_TOOLCHAIN_FILE="C:/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake"

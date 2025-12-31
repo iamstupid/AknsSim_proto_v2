@@ -2,9 +2,9 @@
 
 #include <type_traits>
 
-#include "sim_core/destroyed.hpp"
-#include "sim_core/ecs.hpp"
-#include "sim_core/types.hpp"
+#include "sim_core/ecs/destroyed.hpp"
+#include "sim_core/ecs/ecs.hpp"
+#include "sim_core/core/types.hpp"
 
 namespace arksim {
 

@@ -1,6 +1,6 @@
-#include "sim_core/effects.hpp"
+#include "sim_core/effects/effects.hpp"
 
-#include "sim_core/sim_state.hpp"
+#include "sim_core/runtime/sim_state.hpp"
 
 namespace arksim {
 namespace {

@@ -1,4 +1,4 @@
-#include "sim_core/spatial_grid.hpp"
+#include "sim_core/spatial/spatial_grid.hpp"
 
 #include <algorithm>
 #include <cassert>

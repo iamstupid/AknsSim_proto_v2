@@ -6,10 +6,11 @@
 #include "sim_core/components/attack_power.hpp"
 #include "sim_core/components/damage.hpp"
 #include "sim_core/components/spatial.hpp"
-#include "sim_core/ecs.hpp"
-#include "sim_core/map.hpp"
-#include "sim_core/types.hpp"
-#include "sim_core/vec.hpp"
+#include "sim_core/ecs/ecs.hpp"
+#include "sim_core/nav/map.hpp"
+#include "sim_core/spatial/spatial_grid.hpp"
+#include "sim_core/core/types.hpp"
+#include "sim_core/core/vec.hpp"
 
 namespace arksim {
 
@@ -78,6 +79,15 @@ struct Projectile {
   void clear_target();
   void set_target(Entity target);
 
+  struct Scratch {
+    std::vector<SpatialEntry> candidates;
+    std::vector<Entity> hit_targets;
+  };
+
+  // Zero-allocation variant: caller owns scratch buffers.
+  void step(World& world, SimState& sim, Entity self, const SpatialIndex& spatial, Tick tick_rate, Scratch& scratch);
+
+  // Convenience wrapper (uses thread-local scratch).
   void step(World& world, SimState& sim, Entity self, const SpatialIndex& spatial, Tick tick_rate);
 };
 

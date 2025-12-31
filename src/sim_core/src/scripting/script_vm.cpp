@@ -1,15 +1,105 @@
-#include "sim_core/script_vm.hpp"
+#include "sim_core/scripting/script_vm.hpp"
 
-#include "sim_core/lua_compat.hpp"
-#include "sim_core/sim_state.hpp"
+#include "sim_core/scripting/lua_compat.hpp"
+#include "sim_core/runtime/sim_state.hpp"
 
 #include <cstdint>
+#include <filesystem>
 
 namespace arksim {
 
 namespace {
 
 constexpr const char* kVmRegistryKey = "arksim.vm";
+
+void remove_global(lua_State* state, const char* name) {
+  lua_pushnil(state);
+  lua_setglobal(state, name);
+}
+
+void remove_package_loaded(lua_State* state, const char* name) {
+  lua_getglobal(state, "package");
+  if (!lua_istable(state, -1)) {
+    lua_pop(state, 1);
+    return;
+  }
+
+  lua_getfield(state, -1, "loaded");
+  if (lua_istable(state, -1)) {
+    lua_pushnil(state);
+    lua_setfield(state, -2, name);
+  }
+  lua_pop(state, 2); // loaded + package
+}
+
+void remove_package_preload(lua_State* state, const char* name) {
+  lua_getglobal(state, "package");
+  if (!lua_istable(state, -1)) {
+    lua_pop(state, 1);
+    return;
+  }
+
+  lua_getfield(state, -1, "preload");
+  if (lua_istable(state, -1)) {
+    lua_pushnil(state);
+    lua_setfield(state, -2, name);
+  }
+  lua_pop(state, 2); // preload + package
+}
+
+void set_package_field_string(lua_State* state, const char* field, const char* value) {
+  lua_getglobal(state, "package");
+  if (!lua_istable(state, -1)) {
+    lua_pop(state, 1);
+    return;
+  }
+  lua_pushstring(state, value);
+  lua_setfield(state, -2, field);
+  lua_pop(state, 1);
+}
+
+void remove_package_field(lua_State* state, const char* field) {
+  lua_getglobal(state, "package");
+  if (!lua_istable(state, -1)) {
+    lua_pop(state, 1);
+    return;
+  }
+  lua_pushnil(state);
+  lua_setfield(state, -2, field);
+  lua_pop(state, 1);
+}
+
+void restrict_package_loaders_to_lua_only(lua_State* state) {
+  lua_getglobal(state, "package");
+  if (!lua_istable(state, -1)) {
+    lua_pop(state, 1);
+    return;
+  }
+
+  const char* field = "loaders"; // LuaJIT / Lua 5.1
+  lua_getfield(state, -1, field);
+  if (!lua_istable(state, -1)) {
+    lua_pop(state, 2); // package + nil
+    return;
+  }
+
+  // Keep:
+  //  1) preload loader
+  //  2) Lua loader
+  lua_rawgeti(state, -1, 1); // loader1
+  lua_rawgeti(state, -2, 2); // loader2
+
+  lua_createtable(state, 2, 0); // new_loaders
+  lua_pushvalue(state, -3);     // loader1
+  lua_rawseti(state, -2, 1);
+  lua_pushvalue(state, -3); // loader2
+  lua_rawseti(state, -2, 2);
+
+  // package.loaders = new_loaders
+  lua_setfield(state, -5, field);
+
+  lua_pop(state, 4); // package + old_loaders + loader1 + loader2
+}
 
 ScriptVM* GetVm(lua_State* state) {
   lua_getfield(state, LUA_REGISTRYINDEX, kVmRegistryKey);
@@ -91,6 +181,40 @@ ScriptVM::ScriptVM() {
   state_ = luaL_newstate();
   if (state_) {
     luaL_openlibs(state_);
+
+    // Determinism sandbox:
+    // - allow Lua modules via `require` (pure Lua only)
+    // - disallow host-dependent libs and native module loading
+    remove_global(state_, "io");
+    remove_global(state_, "os");
+    remove_global(state_, "debug");
+    remove_global(state_, "jit");
+
+    remove_package_loaded(state_, "io");
+    remove_package_loaded(state_, "os");
+    remove_package_loaded(state_, "debug");
+    remove_package_loaded(state_, "jit");
+
+    remove_package_preload(state_, "io");
+    remove_package_preload(state_, "os");
+    remove_package_preload(state_, "debug");
+    remove_package_preload(state_, "jit");
+
+    // Disable native module loading (.dll/.so) and lock module search to Lua loaders.
+    set_package_field_string(state_, "cpath", "");
+    remove_package_field(state_, "loadlib");
+    restrict_package_loaders_to_lua_only(state_);
+
+    // Remove non-deterministic RNG to steer scripts toward sim RNG.
+    lua_getglobal(state_, "math");
+    if (lua_istable(state_, -1)) {
+      lua_pushnil(state_);
+      lua_setfield(state_, -2, "random");
+      lua_pushnil(state_);
+      lua_setfield(state_, -2, "randomseed");
+    }
+    lua_pop(state_, 1);
+
     lua_pushlightuserdata(state_, this);
     lua_setfield(state_, LUA_REGISTRYINDEX, kVmRegistryKey);
     RegisterGlobals(state_);
@@ -118,6 +242,17 @@ bool ScriptVM::load_file(const std::string& path) {
   if (!state_) {
     last_error_ = "LuaJIT state not initialized";
     return false;
+  }
+
+  // Restrict module search path to the script directory for stable, reproducible requires.
+  {
+    namespace fs = std::filesystem;
+    fs::path p = fs::path(path).lexically_normal();
+    fs::path dir = p.parent_path();
+    std::string dir_str = dir.empty() ? std::string(".") : dir.generic_string();
+    std::string lua_path = dir_str + "/?.lua;" + dir_str + "/?/init.lua";
+    set_package_field_string(state_, "path", lua_path.c_str());
+    set_package_field_string(state_, "cpath", "");
   }
 
   if (luaL_loadfile(state_, path.c_str()) != 0) {

@@ -3,8 +3,8 @@
 #include <cstdint>
 
 #include "sim_core/components/damage.hpp"
-#include "sim_core/effect.hpp"
-#include "sim_core/ecs.hpp"
+#include "sim_core/effects/effect.hpp"
+#include "sim_core/ecs/ecs.hpp"
 
 namespace arksim {
 

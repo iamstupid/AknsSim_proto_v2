@@ -1,4 +1,4 @@
-#include "sim_core/target_selector.hpp"
+#include "sim_core/spatial/target_selector.hpp"
 
 #include <algorithm>
 #include <cmath>

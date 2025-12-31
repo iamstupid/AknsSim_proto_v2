@@ -1,4 +1,4 @@
-#include "sim_core/effect.hpp"
+#include "sim_core/effects/effect.hpp"
 
 namespace arksim {
 

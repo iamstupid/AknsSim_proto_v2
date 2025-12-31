@@ -5,8 +5,8 @@
 #include <queue>
 #include <vector>
 
-#include "sim_core/scratch_pad.hpp"
-#include "sim_core/types.hpp"
+#include "sim_core/core/scratch_pad.hpp"
+#include "sim_core/core/types.hpp"
 
 namespace arksim {
 

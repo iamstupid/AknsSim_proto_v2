@@ -1,4 +1,4 @@
-#include "sim_core/path_map.hpp"
+#include "sim_core/nav/path_map.hpp"
 
 #include <algorithm>
 #include <cassert>

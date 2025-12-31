@@ -9,9 +9,16 @@
 
 Key APIs:
 - `step()` advances the simulation by `tick_rate`.
+- `step_frame(ctx)` runs the core frame pipeline (movement -> spatial -> combat -> effects) and advances time.
 - `state_hash()` returns a stable hash of core state.
 - `world()` exposes ECS-Lab world.
 - `world_api()` exposes WorldApi with auto-forwarding helpers.
+
+## SimContext
+`SimContext` holds non-ECS simulation state used by multiple systems:
+- `Map` + pathing caches (`BresenhamCache`, `PathMapCache`)
+- `SpatialIndex` (two spatial grids)
+- reusable scratch buffers (e.g. target selection)
 
 ## Effects
 `EffectQueue` is FIFO and is consumed one effect at a time (see `SimState::try_pop_effect`).

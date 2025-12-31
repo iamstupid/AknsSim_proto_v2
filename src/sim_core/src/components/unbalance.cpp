@@ -5,7 +5,7 @@
 #include "sim_core/components/destroyed.hpp"
 #include "sim_core/components/position.hpp"
 #include "sim_core/components/route_move.hpp"
-#include "sim_core/movement_utils.hpp"
+#include "sim_core/core/movement_utils.hpp"
 
 namespace arksim {
 

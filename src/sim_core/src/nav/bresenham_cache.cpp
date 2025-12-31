@@ -1,4 +1,4 @@
-#include "sim_core/bresenham_cache.hpp"
+#include "sim_core/nav/bresenham_cache.hpp"
 
 #include <cmath>
 #include <cstdint>

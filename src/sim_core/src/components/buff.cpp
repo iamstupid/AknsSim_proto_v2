@@ -2,7 +2,7 @@
 
 #include <utility>
 
-#include "sim_core/destroyed.hpp"
+#include "sim_core/ecs/destroyed.hpp"
 
 namespace arksim {
 

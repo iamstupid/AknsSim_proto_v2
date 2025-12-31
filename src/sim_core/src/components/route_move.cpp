@@ -5,9 +5,9 @@
 
 #include "sim_core/components/destroyed.hpp"
 #include "sim_core/components/position.hpp"
-#include "sim_core/movement_utils.hpp"
+#include "sim_core/core/movement_utils.hpp"
 #include "sim_core/components/unbalance.hpp"
-#include "sim_core/path_map.hpp"
+#include "sim_core/nav/path_map.hpp"
 
 namespace arksim {
 

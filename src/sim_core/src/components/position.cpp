@@ -3,15 +3,11 @@
 #include <algorithm>
 #include <cmath>
 
+#include "sim_core/core/movement_utils.hpp"
+
 namespace arksim {
 
 namespace {
-
-constexpr Tick kTicksPerSecond = Tick{1} << 30;
-
-inline f32 tick_rate_to_seconds_f32(Tick tick_rate) {
-  return static_cast<f32>(tick_rate) / static_cast<f32>(kTicksPerSecond);
-}
 
 struct HomingContext {
   f32 dt = 0.0f;

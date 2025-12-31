@@ -6,8 +6,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "sim_core/bresenham_cache.hpp"
-#include "sim_core/map.hpp"
+#include "sim_core/nav/bresenham_cache.hpp"
+#include "sim_core/nav/map.hpp"
 
 namespace arksim {
 

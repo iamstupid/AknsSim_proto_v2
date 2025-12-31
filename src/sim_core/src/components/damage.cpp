@@ -5,8 +5,8 @@
 
 #include "sim_core/components/barrier_shield.hpp"
 #include "sim_core/components/hp.hpp"
-#include "sim_core/script_vm.hpp"
-#include "sim_core/sim_state.hpp"
+#include "sim_core/scripting/script_vm.hpp"
+#include "sim_core/runtime/sim_state.hpp"
 
 namespace arksim {
 

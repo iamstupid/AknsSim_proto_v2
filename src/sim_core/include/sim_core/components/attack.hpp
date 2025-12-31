@@ -4,9 +4,9 @@
 #include <span>
 #include <vector>
 
-#include "sim_core/ecs.hpp"
-#include "sim_core/target_selector.hpp"
-#include "sim_core/types.hpp"
+#include "sim_core/ecs/ecs.hpp"
+#include "sim_core/spatial/target_selector.hpp"
+#include "sim_core/core/types.hpp"
 
 namespace arksim {
 

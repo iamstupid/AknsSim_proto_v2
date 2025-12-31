@@ -13,5 +13,12 @@ This project uses LuaJIT for scripting.
 - Keep script-side state minimal; prefer ECS data in C++.
 - Hot reload by reloading the file and re-binding functions.
 
+## Determinism sandbox
+The default `ScriptVM` environment is restricted to reduce non-determinism:
+- `require` is available for **pure Lua** modules, and module search is restricted to the loaded script's directory.
+- Native module loading is disabled (`package.cpath` is cleared, and `package.loadlib` is removed).
+- Host-dependent libraries are not exposed (`io`, `os`, `debug`, `jit`).
+- `math.random` / `math.randomseed` are removed; use sim RNG bindings instead.
+
 ## TODO
 - Define the exact Lua API exposed to scripts (entities, components, effects).
