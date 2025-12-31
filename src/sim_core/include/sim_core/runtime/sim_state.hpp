@@ -14,6 +14,7 @@ namespace arksim {
 
 class ScriptVM;
 struct SimContext;
+struct WorldRuntime;
 
 class SimState {
 public:
@@ -24,6 +25,7 @@ public:
     World::Snapshot world{};
     EffectQueue::Snapshot queue{};
     std::array<EffectHandler::Handler, 256> handlers{};
+    Entity world_entity{};
 
     Snapshot() {
       handlers.fill(nullptr);
@@ -43,6 +45,9 @@ public:
   World& world() { return world_; }
   const World& world() const { return world_; }
   WorldApi world_api() { return WorldApi{world_, this}; }
+  Entity world_entity() const { return world_entity_; }
+  WorldRuntime& world_runtime();
+  const WorldRuntime& world_runtime() const;
 
   void set_tick_rate(Tick tick_rate);
   void set_tick_rate(std::uint64_t numerator, std::uint64_t denominator);
@@ -78,6 +83,7 @@ private:
   Tick tick_rate_ = 1;
   Rng rng_;
   World world_{};
+  Entity world_entity_{};
   EffectQueue queue_;
   EffectHandler effect_handler_{this};
   ScriptVM* script_ = nullptr; // non-owning

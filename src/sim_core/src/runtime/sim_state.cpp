@@ -1,6 +1,7 @@
 #include "sim_core/runtime/sim_state.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <limits>
 
@@ -12,6 +13,7 @@
 #include "sim_core/ecs/destroyed.hpp"
 #include "sim_core/effects/effects.hpp"
 #include "sim_core/runtime/sim_context.hpp"
+#include "sim_core/runtime/world_runtime.hpp"
 #include "sim_core/components/attack.hpp"
 #include "sim_core/components/block.hpp"
 #include "sim_core/components/barrier_shield.hpp"
@@ -27,10 +29,23 @@ namespace arksim {
 
 SimState::SimState(std::uint64_t seed) : rng_(seed) {
   register_core_effect_handlers(effect_handler_);
+  world_entity_ = world_.create();
+  world_.add<WorldRuntime>(world_entity_);
 }
 
 void SimState::set_tick_rate(Tick tick_rate) {
   tick_rate_ = tick_rate;
+}
+
+WorldRuntime& SimState::world_runtime() {
+  return world_.get<WorldRuntime>(world_entity_);
+}
+
+const WorldRuntime& SimState::world_runtime() const {
+  const auto* runtime = world_.try_get<WorldRuntime>(world_entity_);
+  // Must exist: SimState creates and snapshots a WorldRuntime singleton entity.
+  assert(runtime != nullptr);
+  return *runtime;
 }
 
 namespace {
@@ -254,6 +269,7 @@ std::size_t SimState::step_frame(SimContext& ctx, std::size_t max_effects) {
     const vec<f32> d = cursor_pos - rm->end_point;
     if (d.length_sq() <= 0.05f * 0.05f) {
       rm->reached_end = true;
+      emit_effect(make_leak_effect(e));
       mark_destroyed(world_, e);
     }
   }
@@ -381,6 +397,7 @@ SimState::Snapshot SimState::snapshot() const {
   snap.world = world_.snapshot();
   snap.queue = queue_.snapshot();
   snap.handlers = effect_handler_.handlers;
+  snap.world_entity = world_entity_;
   return snap;
 }
 
@@ -390,6 +407,7 @@ void SimState::restore(const Snapshot& snap) {
   tick_rate_ = snap.tick_rate;
   rng_.restore(snap.rng);
   world_.restore(snap.world);
+  world_entity_ = snap.world_entity;
   queue_.restore(snap.queue);
   effect_handler_.handlers = snap.handlers;
   effect_handler_.bind(this);

@@ -27,6 +27,7 @@
 #include "sim_core/core/rng.hpp"
 #include "sim_core/runtime/sim_context.hpp"
 #include "sim_core/runtime/sim_state.hpp"
+#include "sim_core/runtime/world_runtime.hpp"
 #include "sim_core/spatial/spatial_grid.hpp"
 #include "sim_core/spatial/target_selector.hpp"
 #include "sim_core/core/vec.hpp"
@@ -1788,6 +1789,38 @@ TEST_CASE("RouteMove reached_end marks Destroyed after movement stage") {
 
   sim.step_frame(ctx);
   CHECK(!world.is_alive(e));
+}
+
+TEST_CASE("RouteMove reached_end emits Leak effect and calls WorldRuntime::OnLeak") {
+  arksim::SimState sim(1);
+  arksim::SimContext ctx;
+  ctx.reset_map(5, 5);
+
+  arksim::World& world = sim.world();
+  arksim::Entity e = world.create();
+
+  arksim::Position pos;
+  pos.pos = arksim::vec<arksim::f32>{0.0f, 0.0f};
+  world.add<arksim::Position>(e, pos);
+
+  arksim::RouteMove rm;
+  rm.active = false;
+  rm.cursor_offset = arksim::vec<arksim::f32>{0.0f, 0.0f};
+  rm.set_end(arksim::TileCoord{0, 0}, arksim::vec<arksim::f32>{0.0f, 0.0f});
+  world.add<arksim::RouteMove>(e, rm);
+
+  int leaks = 0;
+  sim.world_runtime().OnLeak.add(1, 0, [&](arksim::World&, arksim::SimState*, arksim::Entity leaked) {
+    ++leaks;
+    CHECK(leaked.entity_id == e.entity_id);
+  });
+
+  const std::size_t processed = sim.step_frame(ctx);
+  CHECK(processed == 1);
+  CHECK(leaks == 1);
+  CHECK(world.is_alive(e));
+  CHECK(world.has<arksim::Destroyed>(e));
+  CHECK(world.get<arksim::RouteMove>(e).reached_end);
 }
 
 TEST_CASE("RouteMove visit_every_checkpoint blocks reached_end until complete") {
