@@ -13,12 +13,14 @@
 #include "sim_core/effects/effects.hpp"
 #include "sim_core/runtime/sim_context.hpp"
 #include "sim_core/components/attack.hpp"
+#include "sim_core/components/block.hpp"
 #include "sim_core/components/barrier_shield.hpp"
 #include "sim_core/components/buff.hpp"
 #include "sim_core/components/destroyed.hpp"
 #include "sim_core/components/position.hpp"
 #include "sim_core/components/projectile.hpp"
 #include "sim_core/components/route_move.hpp"
+#include "sim_core/components/spatial.hpp"
 #include "sim_core/components/unbalance.hpp"
 
 namespace arksim {
@@ -105,6 +107,43 @@ void sort_by_entity_id(std::vector<Entity>& v) {
 std::size_t SimState::step_frame(SimContext& ctx, std::size_t max_effects) {
   cleanup_destroyed(world_, ctx.entities);
   resolve();
+
+  // 0) Block system (uses spatial from previous frame; clears orphaned blocks first).
+  ctx.entities.clear();
+  world_.query<RouteMove, Spatial>([&](Entity e, RouteMove&, Spatial&) { ctx.entities.push_back(e); });
+  sort_by_entity_id(ctx.entities);
+  for (Entity e : ctx.entities) {
+    if (!world_.is_alive(e) || world_.has<Destroyed>(e)) {
+      continue;
+    }
+    auto* rm = world_.try_get<RouteMove>(e);
+    auto* sp = world_.try_get<Spatial>(e);
+    if (!rm || !sp) {
+      continue;
+    }
+    if (!rm->is_blocked()) {
+      continue;
+    }
+
+    if (!world_.is_alive(rm->blocked_by) || !world_.has<Blocker>(rm->blocked_by)) {
+      rm->clear_block();
+      sp->flags &= ~TypeFlags::Blocked;
+    }
+  }
+
+  ctx.entities.clear();
+  world_.query<Blocker, Position>([&](Entity e, Blocker&, Position&) { ctx.entities.push_back(e); });
+  sort_by_entity_id(ctx.entities);
+  for (Entity e : ctx.entities) {
+    if (!world_.is_alive(e) || world_.has<Destroyed>(e)) {
+      continue;
+    }
+    auto* blk = world_.try_get<Blocker>(e);
+    if (!blk) {
+      continue;
+    }
+    blk->step(world_, e, ctx.spatial, tick_rate_);
+  }
 
   // 1) Movement systems (must run before spatial rebuild).
   ctx.entities.clear();

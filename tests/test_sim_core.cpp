@@ -11,6 +11,7 @@
 #include "sim_core/components/area.hpp"
 #include "sim_core/components/attack.hpp"
 #include "sim_core/components/attack_power.hpp"
+#include "sim_core/components/block.hpp"
 #include "sim_core/components/buff.hpp"
 #include "sim_core/components/barrier_shield.hpp"
 #include "sim_core/components/damage.hpp"
@@ -1631,4 +1632,100 @@ TEST_CASE("Unbalance uses Position velocity for movement") {
   CHECK(p.pos.x == doctest::Approx(1.0f).epsilon(1e-5));
   CHECK(p.pos.y == doctest::Approx(0.0f).epsilon(1e-5));
   CHECK(p.current_speed == doctest::Approx(1.0f).epsilon(1e-5));
+}
+
+TEST_CASE("Blocker engages nearest enemy and forced-moves to stable pos") {
+  arksim::World world;
+  arksim::SimContext ctx;
+  ctx.reset_map(10, 10);
+
+  const arksim::Tick kTicksPerSecond = (arksim::Tick{1} << 30);
+  const arksim::Tick dt = (kTicksPerSecond + 9) / 10; // ceil(0.1s)
+
+  arksim::Entity blocker = world.create();
+  arksim::Position blocker_pos;
+  blocker_pos.pos = arksim::vec<arksim::f32>{0.0f, 0.0f};
+  world.add<arksim::Position>(blocker, blocker_pos);
+  arksim::Blocker blk;
+  blk.block_radius = 1.0f;
+  blk.block_capacity = 1;
+  blk.scan_interval = 0; // scan every tick for this test
+  world.add<arksim::Blocker>(blocker, blk);
+
+  auto make_enemy = [&](arksim::f32 x) -> arksim::Entity {
+    arksim::Entity enemy = world.create();
+    arksim::Position pos;
+    pos.pos = arksim::vec<arksim::f32>{x, 0.0f};
+    world.add<arksim::Position>(enemy, pos);
+    world.add<arksim::Area>(enemy, arksim::Area{arksim::Area::Type::Circle, arksim::vec<arksim::f32>{0.1f, 0.0f}});
+    world.add<arksim::Spatial>(enemy, arksim::Spatial{arksim::TypeFlags::Enemy | arksim::TypeFlags::Blockable});
+    world.add<arksim::RouteMove>(enemy, arksim::RouteMove{});
+    return enemy;
+  };
+
+  arksim::Entity e1 = make_enemy(0.1f);
+  arksim::Entity e2 = make_enemy(0.2f);
+
+  ctx.spatial.rebuild(world);
+
+  auto& blocker_comp = world.get<arksim::Blocker>(blocker);
+  blocker_comp.step(world, blocker, ctx.spatial, dt);
+
+  CHECK(blocker_comp.blocked.size() == 1);
+  CHECK(blocker_comp.blocked[0].entity_id == e1.entity_id);
+
+  auto& rm1 = world.get<arksim::RouteMove>(e1);
+  CHECK(rm1.is_blocked());
+  CHECK(rm1.blocked_by.entity_id == blocker.entity_id);
+  CHECK(rm1.is_bound);
+  CHECK(arksim::has_flags(world.get<arksim::Spatial>(e1).flags, arksim::TypeFlags::Blocked));
+
+  // Stable position should be pushed to MIN_SEPARATION=0.5 on +X.
+  CHECK(rm1.stable_block_pos.x == doctest::Approx(0.5f).epsilon(1e-6));
+  CHECK(rm1.stable_block_pos.y == doctest::Approx(0.0f).epsilon(1e-6));
+
+  // Forced move runs over 0.2s, so with dt=0.1s: halfway after 1 step, done after 2.
+  blocker_comp.step(world, blocker, ctx.spatial, dt);
+  CHECK(world.get<arksim::Position>(e1).pos.x == doctest::Approx(0.3f).epsilon(1e-4));
+
+  blocker_comp.step(world, blocker, ctx.spatial, dt);
+  CHECK(world.get<arksim::Position>(e1).pos.x == doctest::Approx(0.5f).epsilon(1e-4));
+}
+
+TEST_CASE("Blocker releases enemy when out of range") {
+  arksim::World world;
+  arksim::SimContext ctx;
+  ctx.reset_map(10, 10);
+
+  const arksim::Tick kTicksPerSecond = (arksim::Tick{1} << 30);
+  const arksim::Tick dt = (kTicksPerSecond + 9) / 10; // ceil(0.1s)
+
+  arksim::Entity blocker = world.create();
+  world.add<arksim::Position>(blocker, arksim::Position{arksim::vec<arksim::f32>{0.0f, 0.0f}});
+  arksim::Blocker blk;
+  blk.block_radius = 1.0f;
+  blk.block_capacity = 1;
+  blk.scan_interval = 0;
+  world.add<arksim::Blocker>(blocker, blk);
+
+  arksim::Entity enemy = world.create();
+  world.add<arksim::Position>(enemy, arksim::Position{arksim::vec<arksim::f32>{0.1f, 0.0f}});
+  world.add<arksim::Area>(enemy, arksim::Area{arksim::Area::Type::Circle, arksim::vec<arksim::f32>{0.1f, 0.0f}});
+  world.add<arksim::Spatial>(enemy, arksim::Spatial{arksim::TypeFlags::Enemy | arksim::TypeFlags::Blockable});
+  world.add<arksim::RouteMove>(enemy, arksim::RouteMove{});
+
+  ctx.spatial.rebuild(world);
+
+  auto& blocker_comp = world.get<arksim::Blocker>(blocker);
+  blocker_comp.step(world, blocker, ctx.spatial, dt);
+  CHECK(world.get<arksim::RouteMove>(enemy).is_blocked());
+
+  // Teleport enemy out of range and run blocker maintenance.
+  world.get<arksim::Position>(enemy).pos = arksim::vec<arksim::f32>{10.0f, 0.0f};
+  blocker_comp.step(world, blocker, ctx.spatial, dt);
+
+  CHECK(!world.get<arksim::RouteMove>(enemy).is_blocked());
+  CHECK(!world.get<arksim::RouteMove>(enemy).is_bound);
+  CHECK(!arksim::has_flags(world.get<arksim::Spatial>(enemy).flags, arksim::TypeFlags::Blocked));
+  CHECK(blocker_comp.blocked.empty());
 }

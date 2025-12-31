@@ -83,6 +83,17 @@ struct RouteMove {
   vec<f32> cached_avoid{};
   Tick avoid_remain = 0;
 
+  // Blocking/binding runtime (used by Blocker).
+  Entity blocked_by{};
+  vec<f32> stable_block_pos{};
+  struct ForcedMove {
+    bool active = false;
+    vec<f32> start{};
+    vec<f32> target{};
+    Tick duration = 0;
+    Tick elapsed = 0;
+  } forced_move{};
+
   bool is_bound = false;
 
   // Target for the current segment (for now: a single target).
@@ -122,6 +133,15 @@ struct RouteMove {
   void push_wait_bossrush_wave(std::uint32_t wait_regions);
 
   void set_end(TileCoord tile, vec<f32> point);
+
+  bool is_blocked() const { return blocked_by.entity_id != 0; }
+
+  void clear_block() {
+    blocked_by = Entity{};
+    stable_block_pos = vec<f32>{};
+    forced_move = ForcedMove{};
+    is_bound = false;
+  }
 
   bool all_checkpoints_completed() const { return cp_index >= cps.size(); }
   const CheckPoint* current_cp() const;

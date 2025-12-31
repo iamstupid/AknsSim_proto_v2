@@ -34,6 +34,7 @@ add_library(sim_core
   src/sim_core/src/components/hp.cpp
   src/sim_core/src/components/position.cpp
   src/sim_core/src/components/projectile.cpp
+  src/sim_core/src/components/block.cpp
   src/sim_core/src/components/route_move.cpp
   src/sim_core/src/components/unbalance.cpp
 )
