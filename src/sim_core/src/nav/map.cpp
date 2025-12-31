@@ -118,5 +118,34 @@ TileCoord Map::tile_at(const vec<f32>& pos) {
   return TileCoord{round_half_to_even(static_cast<double>(pos.x)), round_half_to_even(static_cast<double>(pos.y))};
 }
 
-} // namespace arksim
+Map::Snapshot Map::snapshot() const {
+  Snapshot snap;
+  snap.width = width_;
+  snap.height = height_;
+  snap.version = version_;
+  snap.flags.reserve(tiles_.size());
+  for (const Tile& t : tiles_) {
+    snap.flags.push_back(t.flags);
+  }
+  return snap;
+}
 
+void Map::restore(const Snapshot& snap) {
+  width_ = snap.width;
+  height_ = snap.height;
+  version_ = snap.version;
+
+  const std::size_t expected = static_cast<std::size_t>(std::max(0, width_)) * static_cast<std::size_t>(std::max(0, height_));
+  tiles_.clear();
+  tiles_.resize(expected);
+
+  if (snap.flags.size() != expected) {
+    return;
+  }
+
+  for (std::size_t i = 0; i < expected; ++i) {
+    tiles_[i].flags = snap.flags[i];
+  }
+}
+
+} // namespace arksim

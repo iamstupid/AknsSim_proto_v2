@@ -146,6 +146,26 @@ double Rng::uniform_f64(double min, double max) {
   return min + (max - min) * next_f64();
 }
 
+Rng::Snapshot Rng::snapshot() const noexcept {
+  Snapshot snap;
+  snap.s0 = s_[0];
+  snap.s1 = s_[1];
+  snap.s2 = s_[2];
+  snap.s3 = s_[3];
+  return snap;
+}
+
+void Rng::restore(const Snapshot& snap) noexcept {
+  s_[0] = snap.s0;
+  s_[1] = snap.s1;
+  s_[2] = snap.s2;
+  s_[3] = snap.s3;
+
+  if ((s_[0] | s_[1] | s_[2] | s_[3]) == 0) {
+    s_[0] = 1;
+  }
+}
+
 std::uint64_t Rng::state() const {
   return s_[0] ^ s_[1] ^ s_[2] ^ s_[3];
 }

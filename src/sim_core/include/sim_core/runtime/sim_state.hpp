@@ -17,6 +17,24 @@ struct SimContext;
 
 class SimState {
 public:
+  struct Snapshot {
+    Tick tick = 0;
+    Tick tick_rate = 1;
+    Rng::Snapshot rng{};
+    World::Snapshot world{};
+    EffectQueue::Snapshot queue{};
+    std::array<EffectHandler::Handler, 256> handlers{};
+
+    Snapshot() {
+      handlers.fill(nullptr);
+    }
+
+    Snapshot(Snapshot&&) noexcept = default;
+    Snapshot& operator=(Snapshot&&) noexcept = default;
+    Snapshot(const Snapshot&) = delete;
+    Snapshot& operator=(const Snapshot&) = delete;
+  };
+
   explicit SimState(std::uint64_t seed = 0);
 
   Tick tick() const { return tick_; }
@@ -47,6 +65,9 @@ public:
   std::size_t process_all_effects(std::size_t max_effects = 100'000);
 
   std::uint64_t state_hash() const;
+
+  Snapshot snapshot() const;
+  void restore(const Snapshot& snap);
 
 private:
   void resolve();

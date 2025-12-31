@@ -71,6 +71,27 @@ struct DamageAggregator {
     DamageProcessor proc;
   };
 
+  DamageAggregator() = default;
+
+  DamageAggregator(const DamageAggregator& other)
+      : procs(other.procs) {
+    // `sorted` caches pointers into `procs`; it must be rebuilt in the copy.
+    dirty = true;
+  }
+
+  DamageAggregator& operator=(const DamageAggregator& other) {
+    if (this == &other) {
+      return *this;
+    }
+    procs = other.procs;
+    sorted.clear();
+    dirty = true;
+    return *this;
+  }
+
+  DamageAggregator(DamageAggregator&&) noexcept = default;
+  DamageAggregator& operator=(DamageAggregator&&) noexcept = default;
+
   void add(Entity name, int priority, DamageProcessor proc);
   void add(std::uint64_t name, int priority, DamageProcessor proc);
   void add(Entity name, DamageProcessor proc);

@@ -55,10 +55,17 @@ private:
 
 class EffectQueue {
 public:
+  struct Snapshot {
+    std::queue<Effect> effects{};
+  };
+
   void clear();
   void push(const Effect& effect);
   bool try_pop(Effect& out);
   std::size_t size() const { return effects_.size(); }
+
+  Snapshot snapshot() const { return Snapshot{effects_}; }
+  void restore(const Snapshot& snap) { effects_ = snap.effects; }
 
 private:
   std::queue<Effect> effects_;

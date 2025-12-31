@@ -252,4 +252,30 @@ std::uint64_t SimState::state_hash() const {
   return hash;
 }
 
+SimState::Snapshot SimState::snapshot() const {
+  Snapshot snap;
+  snap.tick = tick_;
+  snap.tick_rate = tick_rate_;
+  snap.rng = rng_.snapshot();
+  snap.world = world_.snapshot();
+  snap.queue = queue_.snapshot();
+  snap.handlers = effect_handler_.handlers;
+  return snap;
+}
+
+void SimState::restore(const Snapshot& snap) {
+  // NOTE: Script state is intentionally excluded from snapshots. Scripts must be stateless / rebuildable.
+  tick_ = snap.tick;
+  tick_rate_ = snap.tick_rate;
+  rng_.restore(snap.rng);
+  world_.restore(snap.world);
+  queue_.restore(snap.queue);
+  effect_handler_.handlers = snap.handlers;
+  effect_handler_.bind(this);
+
+  if (script_) {
+    script_->bind_world(this);
+  }
+}
+
 } // namespace arksim

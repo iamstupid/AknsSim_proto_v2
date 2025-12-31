@@ -51,6 +51,13 @@ struct Tile {
 
 class Map {
 public:
+  struct Snapshot {
+    int width = 0;
+    int height = 0;
+    std::uint64_t version = 1;
+    std::vector<TileFlags> flags{};
+  };
+
   Map() = default;
   Map(int width, int height);
 
@@ -86,6 +93,9 @@ public:
   static TileCoord tile_at(const vec<f32>& pos);
   static vec<f32> tile_center(TileCoord t) { return vec<f32>{static_cast<f32>(t.x), static_cast<f32>(t.y)}; }
 
+  Snapshot snapshot() const;
+  void restore(const Snapshot& snap);
+
 private:
   int width_ = 0;
   int height_ = 0;
@@ -96,4 +106,3 @@ private:
 };
 
 } // namespace arksim
-

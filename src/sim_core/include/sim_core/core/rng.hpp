@@ -6,6 +6,13 @@ namespace arksim {
 
 class Rng {
 public:
+  struct Snapshot {
+    std::uint64_t s0 = 0;
+    std::uint64_t s1 = 0;
+    std::uint64_t s2 = 0;
+    std::uint64_t s3 = 0;
+  };
+
   explicit Rng(std::uint64_t seed = 0);
 
   void reseed(std::uint64_t seed);
@@ -13,6 +20,9 @@ public:
   std::uint32_t next_u32();
   float next_f32();
   double next_f64();
+
+  Snapshot snapshot() const noexcept;
+  void restore(const Snapshot& snap) noexcept;
 
   std::uint64_t state() const;
 

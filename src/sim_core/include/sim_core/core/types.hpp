@@ -52,6 +52,27 @@ public:
   using Fn = std::function<void(Args...)>;
   using Trigger = std::tuple<int, std::uint64_t, Fn>;
 
+  TriggerProcessor() = default;
+
+  TriggerProcessor(const TriggerProcessor& other)
+      : triggers_(other.triggers_) {
+    // Cached pointers in `ordered_` are not safe to copy across instances.
+    dirty_ = true;
+  }
+
+  TriggerProcessor& operator=(const TriggerProcessor& other) {
+    if (this == &other) {
+      return *this;
+    }
+    triggers_ = other.triggers_;
+    ordered_.clear();
+    dirty_ = true;
+    return *this;
+  }
+
+  TriggerProcessor(TriggerProcessor&&) noexcept = default;
+  TriggerProcessor& operator=(TriggerProcessor&&) noexcept = default;
+
   void add(std::uint64_t name, int priority, Fn fn) {
     triggers_[name] = Trigger{priority, name, std::move(fn)};
     dirty_ = true;

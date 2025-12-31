@@ -24,6 +24,7 @@
 #include "sim_core/nav/map.hpp"
 #include "sim_core/nav/path_map.hpp"
 #include "sim_core/core/rng.hpp"
+#include "sim_core/runtime/sim_context.hpp"
 #include "sim_core/runtime/sim_state.hpp"
 #include "sim_core/spatial/spatial_grid.hpp"
 #include "sim_core/spatial/target_selector.hpp"
@@ -94,6 +95,97 @@ TEST_CASE("SimState hash stable") {
   }
 
   CHECK(s1.state_hash() == s2.state_hash());
+}
+
+TEST_CASE("SimState+SimContext snapshot restore (script excluded)") {
+  arksim::SimState sim(999);
+  arksim::SimContext ctx;
+  ctx.reset_map(8, 8);
+
+  const arksim::TileCoord tile{1, 1};
+  CHECK(ctx.map.flags(tile) == arksim::TileFlags::None);
+
+  arksim::World& world = sim.world();
+
+  arksim::Entity attacker = world.create();
+  world.add<arksim::Position>(attacker, arksim::Position{arksim::vec<arksim::f32>{2.0f, 2.0f}});
+
+  arksim::Entity target = world.create();
+  world.add<arksim::Position>(target, arksim::Position{arksim::vec<arksim::f32>{2.0f, 2.0f}});
+  world.add<arksim::Area>(target, arksim::Area{arksim::Area::Type::Circle, arksim::vec<arksim::f32>{0.1f, 0.0f}});
+  world.add<arksim::Spatial>(target, arksim::Spatial{arksim::TypeFlags::Enemy});
+
+  arksim::HP hp;
+  hp.total_hp = arksim::BuffNum(100.0);
+  hp.ratio = 1.0;
+  world.add<arksim::HP>(target, hp);
+  arksim::ensure_defstats(world, target);
+
+  arksim::Attack atk;
+  atk.scan_interval = 0;
+  atk.scan_remain = 0;
+  atk.range_kind = arksim::TargetRange::Kind::Circle;
+  atk.range_grid = arksim::TargetRange::Grid::Occupation;
+  atk.required = arksim::TypeFlags::Enemy;
+  atk.range_radius = 1.0f;
+  atk.base_interval = 10;
+  atk.base_pre = 2;
+  atk.base_post = 1;
+  atk.arranger.max_targets = 1;
+
+  int fired = 0;
+  atk.OnFire.add(1, 0, [&](arksim::World&, arksim::SimState* s, arksim::Entity self, std::span<const arksim::Entity> ts, arksim::Attack&) {
+    ++fired;
+    REQUIRE(s != nullptr);
+    REQUIRE(ts.size() == 1);
+    const double dmg_amount = static_cast<double>(s->rng().uniform_u32(10, 20));
+    arksim::Damage dmg{dmg_amount, arksim::Damage::physical};
+    s->emit_effect(arksim::make_damage_effect(self, ts[0], dmg));
+  });
+
+  world.add<arksim::Attack>(attacker, atk);
+
+  // Run some frames so that the attack fires and consumes RNG.
+  sim.step_frame(ctx);
+  sim.step_frame(ctx);
+  sim.step_frame(ctx);
+  CHECK(fired >= 1);
+
+  const auto snap_sim = sim.snapshot();
+  const auto snap_ctx = ctx.snapshot();
+
+  const double ratio_at_snap = world.get<arksim::HP>(target).ratio;
+  const arksim::Tick tick_at_snap = sim.tick();
+  const int fired_at_snap = fired;
+
+  // Mutate map/world further.
+  ctx.map.set_flag(tile, arksim::TileFlags::Obstacle, true);
+  CHECK(ctx.map.flags(tile) == arksim::TileFlags::Obstacle);
+
+  for (int i = 0; i < 20; ++i) {
+    sim.step_frame(ctx);
+  }
+  const double ratio_after = world.get<arksim::HP>(target).ratio;
+  const arksim::Tick tick_after = sim.tick();
+  const int fired_after = fired;
+
+  // Restore and re-run the same number of frames: results should match exactly.
+  ctx.restore(snap_ctx);
+  sim.restore(snap_sim);
+  fired = fired_at_snap;
+
+  CHECK(sim.tick() == tick_at_snap);
+  CHECK(world.get<arksim::HP>(target).ratio == doctest::Approx(ratio_at_snap));
+  CHECK(fired == fired_at_snap);
+  CHECK(ctx.map.flags(tile) == arksim::TileFlags::None);
+
+  for (int i = 0; i < 20; ++i) {
+    sim.step_frame(ctx);
+  }
+
+  CHECK(sim.tick() == tick_after);
+  CHECK(world.get<arksim::HP>(target).ratio == doctest::Approx(ratio_after));
+  CHECK(fired == fired_after);
 }
 
 TEST_CASE("SimState tick rate") {

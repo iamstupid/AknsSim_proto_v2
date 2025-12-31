@@ -17,6 +17,10 @@ namespace arksim {
 // - spatial acceleration structures
 // - reusable scratch buffers to avoid per-tick allocations
 struct SimContext {
+  struct Snapshot {
+    Map::Snapshot map;
+  };
+
   Map map{};
   BresenhamCache bresenham{};
   PathMapCache path_cache{map, bresenham};
@@ -31,6 +35,24 @@ struct SimContext {
     map = Map(width, height);
     spatial.reset(width, height);
     path_cache.clear();
+  }
+
+  Snapshot snapshot() const {
+    Snapshot snap;
+    snap.map = map.snapshot();
+    return snap;
+  }
+
+  void restore(const Snapshot& snap) {
+    map.restore(snap.map);
+    spatial.reset(map.width(), map.height());
+    path_cache.clear();
+    entities.clear();
+    target_scratch.candidates.clear();
+    target_scratch.scored.clear();
+    target_scratch.targets.clear();
+    projectile_scratch.candidates.clear();
+    projectile_scratch.hit_targets.clear();
   }
 };
 
