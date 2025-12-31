@@ -22,6 +22,7 @@ add_library(sim_core
   src/sim_core/src/runtime/sim_state.cpp
   src/sim_core/src/scripting/script_vm.cpp
   src/sim_core/src/nav/map.cpp
+  src/sim_core/src/nav/arknights_level.cpp
   src/sim_core/src/nav/bresenham_cache.cpp
   src/sim_core/src/nav/path_map.cpp
   src/sim_core/src/spatial/spatial_grid.cpp
@@ -46,6 +47,8 @@ target_link_libraries(sim_core
   PUBLIC
     ecs_lab
     LuaJIT::LuaJIT
+  PRIVATE
+    nlohmann_json::nlohmann_json
 )
 
 if (MSVC)

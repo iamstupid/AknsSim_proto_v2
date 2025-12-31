@@ -2,6 +2,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <filesystem>
 #include <vector>
 
 #include "sim_core/effects/effect.hpp"
@@ -23,6 +24,7 @@
 #include "sim_core/components/unbalance.hpp"
 #include "sim_core/nav/bresenham_cache.hpp"
 #include "sim_core/nav/map.hpp"
+#include "sim_core/nav/arknights_level.hpp"
 #include "sim_core/nav/path_map.hpp"
 #include "sim_core/core/rng.hpp"
 #include "sim_core/runtime/sim_context.hpp"
@@ -1847,4 +1849,45 @@ TEST_CASE("RouteMove visit_every_checkpoint blocks reached_end until complete") 
   CHECK(world.is_alive(e));
   CHECK(!world.has<arksim::Destroyed>(e));
   CHECK(!world.get<arksim::RouteMove>(e).reached_end);
+}
+
+TEST_CASE("Load ArknightsGameData level_a001_01 map and validate ground pathing") {
+  namespace fs = std::filesystem;
+
+  const fs::path repo_root = fs::path(__FILE__).parent_path().parent_path();
+  const fs::path level_path =
+      repo_root / "data" / "ArknightsGameData" / "zh_CN" / "gamedata" / "levels" / "activities" / "a001" / "level_a001_01.json";
+
+  if (!fs::exists(level_path)) {
+    // Submodule not initialized in this environment.
+    return;
+  }
+
+  arksim::ArknightsLevel level;
+  std::string err;
+  REQUIRE(arksim::load_arknights_level_file(level_path, level, &err));
+
+  CHECK(level.map.width() == 10);
+  CHECK(level.map.height() == 7);
+
+  // A known end tile in this level: (x=0, y=4).
+  CHECK(level.map.passable(arksim::TileCoord{0, 4}, arksim::MoveMode::Ground));
+
+  arksim::SimContext ctx;
+  ctx.map = level.map;
+  ctx.spatial.reset(ctx.map.width(), ctx.map.height());
+  ctx.path_cache.clear();
+
+  // All WALK routes in this file should be able to reach their end tile on ground.
+  for (const auto& route : level.routes) {
+    if (route.route.mode != arksim::MoveMode::Ground) {
+      continue;
+    }
+    const arksim::TileCoord end_tile = route.route.end_tile;
+    if (!ctx.map.passable(end_tile, arksim::MoveMode::Ground)) {
+      continue;
+    }
+    const arksim::PathMap& pm = ctx.path_cache.get_ground(end_tile, route.route.allow_diagonal_move);
+    CHECK(pm.dist(route.start_tile) != arksim::PathMap::kInf);
+  }
 }
