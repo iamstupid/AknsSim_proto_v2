@@ -1762,3 +1762,56 @@ TEST_CASE("Hole kills non-flying after movement stage") {
   CHECK(world.is_alive(flying));
   CHECK(!world.has<arksim::Destroyed>(flying));
 }
+
+TEST_CASE("RouteMove reached_end marks Destroyed after movement stage") {
+  arksim::SimState sim(1);
+  arksim::SimContext ctx;
+  ctx.reset_map(5, 5);
+
+  arksim::World& world = sim.world();
+  arksim::Entity e = world.create();
+
+  arksim::Position pos;
+  pos.pos = arksim::vec<arksim::f32>{0.0f, 0.0f};
+  world.add<arksim::Position>(e, pos);
+
+  arksim::RouteMove rm;
+  rm.active = false; // prove that reached_end is checked outside RouteMove::step
+  rm.cursor_offset = arksim::vec<arksim::f32>{0.0f, 0.0f};
+  rm.set_end(arksim::TileCoord{0, 0}, arksim::vec<arksim::f32>{0.0f, 0.0f});
+  world.add<arksim::RouteMove>(e, rm);
+
+  sim.step_frame(ctx);
+  CHECK(world.is_alive(e));
+  CHECK(world.has<arksim::Destroyed>(e));
+  CHECK(world.get<arksim::RouteMove>(e).reached_end);
+
+  sim.step_frame(ctx);
+  CHECK(!world.is_alive(e));
+}
+
+TEST_CASE("RouteMove visit_every_checkpoint blocks reached_end until complete") {
+  arksim::SimState sim(1);
+  arksim::SimContext ctx;
+  ctx.reset_map(5, 5);
+
+  arksim::World& world = sim.world();
+  arksim::Entity e = world.create();
+
+  arksim::Position pos;
+  pos.pos = arksim::vec<arksim::f32>{0.0f, 0.0f};
+  world.add<arksim::Position>(e, pos);
+
+  arksim::RouteMove rm;
+  rm.active = false;
+  rm.cursor_offset = arksim::vec<arksim::f32>{0.0f, 0.0f};
+  rm.visit_every_checkpoint = true;
+  rm.push_move_cp(arksim::TileCoord{4, 0}, arksim::vec<arksim::f32>{4.0f, 0.0f});
+  rm.set_end(arksim::TileCoord{0, 0}, arksim::vec<arksim::f32>{0.0f, 0.0f});
+  world.add<arksim::RouteMove>(e, rm);
+
+  sim.step_frame(ctx);
+  CHECK(world.is_alive(e));
+  CHECK(!world.has<arksim::Destroyed>(e));
+  CHECK(!world.get<arksim::RouteMove>(e).reached_end);
+}

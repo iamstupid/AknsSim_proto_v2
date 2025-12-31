@@ -227,6 +227,37 @@ std::size_t SimState::step_frame(SimContext& ctx, std::size_t max_effects) {
     }
   }
 
+  // 1.6) Reach end (after movement, before spatial rebuild):
+  // Reaching the end point is not tied to RouteMove::step (e.g. if RouteMove is inactive).
+  ctx.entities.clear();
+  world_.query<RouteMove, Position>([&](Entity e, RouteMove&, Position&) { ctx.entities.push_back(e); });
+  sort_by_entity_id(ctx.entities);
+
+  for (Entity e : ctx.entities) {
+    if (!world_.is_alive(e) || world_.has<Destroyed>(e)) {
+      continue;
+    }
+
+    auto* rm = world_.try_get<RouteMove>(e);
+    const auto* pos = world_.try_get<Position>(e);
+    if (!rm || !pos) {
+      continue;
+    }
+    if (!rm->has_end || rm->reached_end) {
+      continue;
+    }
+    if (rm->visit_every_checkpoint && !rm->all_checkpoints_completed()) {
+      continue;
+    }
+
+    const vec<f32> cursor_pos = pos->pos + rm->cursor_offset;
+    const vec<f32> d = cursor_pos - rm->end_point;
+    if (d.length_sq() <= 0.05f * 0.05f) {
+      rm->reached_end = true;
+      mark_destroyed(world_, e);
+    }
+  }
+
   // 2) Spatial rebuild (Position/Area/Spatial).
   ctx.spatial.rebuild(world_);
 
