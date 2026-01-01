@@ -14,6 +14,7 @@
 #include "sim_core/effects/effects.hpp"
 #include "sim_core/runtime/sim_context.hpp"
 #include "sim_core/runtime/world_runtime.hpp"
+#include "sim_core/runtime/stage_runtime.hpp"
 #include "sim_core/components/attack.hpp"
 #include "sim_core/components/block.hpp"
 #include "sim_core/components/barrier_shield.hpp"
@@ -122,6 +123,13 @@ void sort_by_entity_id(std::vector<Entity>& v) {
 std::size_t SimState::step_frame(SimContext& ctx, std::size_t max_effects) {
   cleanup_destroyed(world_, ctx.entities);
   resolve();
+
+  // -1) Stage scheduler (spawns etc) runs before frame systems.
+  if (ctx.arknights_level) {
+    if (auto* stage = world_.try_get<StageRuntime>(world_entity_); stage && stage->active) {
+      stage->step(world_, *this, ctx, *ctx.arknights_level);
+    }
+  }
 
   // 0) Block system (uses spatial from previous frame; clears orphaned blocks first).
   ctx.entities.clear();

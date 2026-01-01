@@ -30,6 +30,7 @@
 #include "sim_core/core/rng.hpp"
 #include "sim_core/runtime/sim_context.hpp"
 #include "sim_core/runtime/sim_state.hpp"
+#include "sim_core/runtime/stage_runtime.hpp"
 #include "sim_core/runtime/world_runtime.hpp"
 #include "sim_core/spatial/spatial_grid.hpp"
 #include "sim_core/spatial/target_selector.hpp"
@@ -1870,6 +1871,8 @@ TEST_CASE("Load ArknightsGameData level_a001_01 map and validate ground pathing"
 
   CHECK(level.map.width() == 10);
   CHECK(level.map.height() == 7);
+  CHECK(level.max_life_point == 15);
+  CHECK(!level.spawns.empty());
 
   // A known end tile in this level: (x=0, y=4).
   CHECK(level.map.passable(arksim::TileCoord{0, 4}, arksim::MoveMode::Ground));
@@ -1881,6 +1884,9 @@ TEST_CASE("Load ArknightsGameData level_a001_01 map and validate ground pathing"
 
   // All WALK routes in this file should be able to reach their end tile on ground.
   for (const auto& route : level.routes) {
+    if (!route.valid) {
+      continue;
+    }
     if (route.mode != arksim::MoveMode::Ground) {
       continue;
     }
@@ -1948,4 +1954,41 @@ TEST_CASE("ArknightsRoute instantiate randomizeReachOffset uses RNG at spawn-tim
   REQUIRE(rand_rm2.cps.size() == 1);
   CHECK(rand_rm2.cps[0].target_point.x == doctest::Approx(cp1.target_point.x));
   CHECK(rand_rm2.cps[0].target_point.y == doctest::Approx(cp1.target_point.y));
+}
+
+TEST_CASE("StageRuntime spawns ArknightsLevel spawns at tick 0") {
+  namespace fs = std::filesystem;
+
+  const fs::path repo_root = fs::path(__FILE__).parent_path().parent_path();
+  const fs::path level_path =
+      repo_root / "data" / "ArknightsGameData" / "zh_CN" / "gamedata" / "levels" / "activities" / "a001" / "level_a001_01.json";
+
+  if (!fs::exists(level_path)) {
+    // Submodule not initialized in this environment.
+    return;
+  }
+
+  arksim::ArknightsLevel level;
+  REQUIRE(arksim::load_arknights_level_file(level_path, level));
+
+  const std::size_t expected_at_0 =
+      static_cast<std::size_t>(std::count_if(level.spawns.begin(), level.spawns.end(), [](const arksim::ArknightsSpawnEvent& ev) {
+        return ev.spawn_tick == 0;
+      }));
+  REQUIRE(expected_at_0 > 0);
+
+  arksim::SimState sim(123);
+  sim.set_tick_rate(1, 10); // 0.1s
+  arksim::SimContext ctx;
+
+  arksim::start_arknights_stage(sim, ctx, level);
+  sim.step_frame(ctx);
+
+  std::size_t spawned = 0;
+  sim.world().each<arksim::RouteMove>([&](arksim::Entity, arksim::RouteMove&) { ++spawned; });
+  CHECK(spawned == expected_at_0);
+
+  const auto* stage = sim.world().try_get<arksim::StageRuntime>(sim.world_entity());
+  REQUIRE(stage != nullptr);
+  CHECK(stage->next_spawn == expected_at_0);
 }

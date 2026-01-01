@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -30,6 +31,10 @@ struct ArknightsCheckpoint {
 };
 
 struct ArknightsRoute {
+  // Index-stable loader: ArknightsLevel.routes keeps the original JSON indices.
+  // Unsupported/invalid routes are kept as invalid placeholders.
+  bool valid = false;
+
   MoveMode mode = MoveMode::Ground;
   bool allow_diagonal_move = true;
   bool visit_every_checkpoint = false;
@@ -48,9 +53,28 @@ struct ArknightsRoute {
   RouteMove instantiate(Rng& rng) const;
 };
 
+struct ArknightsSpawnEvent {
+  // Absolute stage time (ticks since stage start) at which the spawn should occur.
+  Tick spawn_tick = 0;
+
+  // For RouteMove timer initialization.
+  Tick wave_start_tick = 0;
+  Tick fragment_start_tick = 0;
+
+  std::uint32_t wave_index = 0;
+  std::uint32_t fragment_index = 0;
+  std::uint32_t route_index = 0;
+
+  // Enemy ID string, e.g. "enemy_1027_mob".
+  std::string key{};
+};
+
 struct ArknightsLevel {
   Map map{};
   std::vector<ArknightsRoute> routes{};
+  std::vector<ArknightsSpawnEvent> spawns{};
+
+  int max_life_point = 0;
 };
 
 // Load an Arknights `level_*.json` file from ArknightsGameData.

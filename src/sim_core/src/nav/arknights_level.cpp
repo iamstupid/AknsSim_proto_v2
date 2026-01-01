@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <string_view>
 
@@ -115,6 +116,21 @@ bool parse_checkpoint_type(std::string_view s, RouteMove::CheckPoint::Type& out)
   return false;
 }
 
+constexpr Tick kTicksPerSecond = Tick{1} << 30;
+
+Tick ticks_from_seconds_ceil(double seconds) {
+  const long double scaled =
+      std::ceil(static_cast<long double>(seconds) * static_cast<long double>(kTicksPerSecond));
+  if (scaled <= 0.0L) {
+    return 0;
+  }
+  const long double maxv = static_cast<long double>(std::numeric_limits<Tick>::max());
+  if (scaled >= maxv) {
+    return std::numeric_limits<Tick>::max();
+  }
+  return static_cast<Tick>(scaled);
+}
+
 } // namespace
 
 bool load_arknights_level_file(const std::filesystem::path& path,
@@ -220,6 +236,13 @@ bool load_arknights_level_file(const std::filesystem::path& path,
     return 0.5f;
   }();
 
+  if (root.contains("options")) {
+    const auto& opt = root.at("options");
+    if (opt.contains("maxLifePoint")) {
+      out.max_life_point = opt.at("maxLifePoint").get<int>();
+    }
+  }
+
   const nlohmann::json routes = root.contains("routes") ? root.at("routes") : nlohmann::json::array();
   if (!routes.is_array()) {
     if (error) {
@@ -228,9 +251,13 @@ bool load_arknights_level_file(const std::filesystem::path& path,
     return false;
   }
 
-  out.routes.reserve(routes.size());
+  out.routes.clear();
+  out.routes.resize(routes.size());
   for (std::size_t route_index = 0; route_index < routes.size(); ++route_index) {
     const auto& route_j = routes.at(route_index);
+    ArknightsRoute& route = out.routes[route_index];
+    route = ArknightsRoute{}; // reset placeholder (keeps index stable)
+
     if (!route_j.is_object()) {
       continue;
     }
@@ -270,7 +297,7 @@ bool load_arknights_level_file(const std::filesystem::path& path,
     (void)parse_vec2(route_j.value("spawnOffset", nlohmann::json{}), spawn_offset);
     (void)parse_vec2(route_j.value("spawnRandomRange", nlohmann::json{}), spawn_random_range);
 
-    ArknightsRoute route;
+    route.valid = true;
     route.mode = mode;
     route.move_multiplier = move_multiplier;
     route.allow_diagonal_move = route_j.value("allowDiagonalMove", route.allow_diagonal_move);
@@ -385,8 +412,106 @@ bool load_arknights_level_file(const std::filesystem::path& path,
         }
       }
     }
+  }
 
-    out.routes.push_back(std::move(route));
+  // Spawn schedule (waves -> fragments -> actions).
+  // We currently flatten only SPAWN actions into `out.spawns`, but still account for
+  // non-SPAWN actions when computing wave boundaries for sequential scheduling.
+  out.spawns.clear();
+  const nlohmann::json waves = root.contains("waves") ? root.at("waves") : nlohmann::json::array();
+  if (waves.is_array()) {
+    Tick cursor = 0;
+    for (std::size_t wave_index = 0; wave_index < waves.size(); ++wave_index) {
+      const auto& wave_j = waves.at(wave_index);
+      if (!wave_j.is_object()) {
+        continue;
+      }
+
+      const Tick wave_pre = ticks_from_seconds_ceil(wave_j.value("preDelay", 0.0));
+      const Tick wave_post = ticks_from_seconds_ceil(wave_j.value("postDelay", 0.0));
+      const Tick wave_start = cursor + wave_pre;
+      Tick wave_end = wave_start;
+
+      auto fragments = wave_j.value("fragments", nlohmann::json::array());
+      if (fragments.is_null()) {
+        fragments = nlohmann::json::array();
+      }
+
+      if (fragments.is_array()) {
+        for (std::size_t frag_index = 0; frag_index < fragments.size(); ++frag_index) {
+          const auto& frag_j = fragments.at(frag_index);
+          if (!frag_j.is_object()) {
+            continue;
+          }
+
+          const Tick frag_pre = ticks_from_seconds_ceil(frag_j.value("preDelay", 0.0));
+          const Tick frag_start = wave_start + frag_pre;
+          wave_end = std::max(wave_end, frag_start);
+
+          auto actions = frag_j.value("actions", nlohmann::json::array());
+          if (actions.is_null()) {
+            actions = nlohmann::json::array();
+          }
+
+          if (!actions.is_array()) {
+            continue;
+          }
+
+          for (std::size_t action_index = 0; action_index < actions.size(); ++action_index) {
+            const auto& action_j = actions.at(action_index);
+            if (!action_j.is_object()) {
+              continue;
+            }
+
+            const std::string action_type = action_j.value("actionType", "");
+            const int count_raw = action_j.value("count", 1);
+            const std::uint32_t count = count_raw > 0 ? static_cast<std::uint32_t>(count_raw) : 0u;
+
+            const Tick action_pre = ticks_from_seconds_ceil(action_j.value("preDelay", 0.0));
+            const Tick interval = ticks_from_seconds_ceil(action_j.value("interval", 0.0));
+
+            const Tick first_tick = frag_start + action_pre;
+            Tick last_tick = first_tick;
+            if (count > 1) {
+              last_tick = first_tick + interval * static_cast<Tick>(count - 1);
+            }
+            wave_end = std::max(wave_end, last_tick);
+
+            if (action_type != "SPAWN" || count == 0) {
+              continue;
+            }
+
+            const std::string key = action_j.value("key", "");
+            const int route_index_i = action_j.value("routeIndex", -1);
+            if (route_index_i < 0) {
+              continue;
+            }
+            const std::uint32_t route_index_u = static_cast<std::uint32_t>(route_index_i);
+            if (route_index_u >= static_cast<std::uint32_t>(out.routes.size())) {
+              continue;
+            }
+
+            for (std::uint32_t i = 0; i < count; ++i) {
+              ArknightsSpawnEvent ev;
+              ev.spawn_tick = first_tick + interval * static_cast<Tick>(i);
+              ev.wave_start_tick = wave_start;
+              ev.fragment_start_tick = frag_start;
+              ev.wave_index = static_cast<std::uint32_t>(wave_index);
+              ev.fragment_index = static_cast<std::uint32_t>(frag_index);
+              ev.route_index = route_index_u;
+              ev.key = key;
+              out.spawns.push_back(std::move(ev));
+            }
+          }
+        }
+      }
+
+      cursor = wave_end + wave_post;
+    }
+
+    std::stable_sort(out.spawns.begin(), out.spawns.end(), [](const ArknightsSpawnEvent& a, const ArknightsSpawnEvent& b) {
+      return a.spawn_tick < b.spawn_tick;
+    });
   }
 
   return true;

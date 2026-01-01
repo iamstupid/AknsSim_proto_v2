@@ -12,6 +12,8 @@
 
 namespace arksim {
 
+struct ArknightsLevel;
+
 // Shared per-simulation context that does not belong in ECS:
 // - Map + navigation caches
 // - spatial acceleration structures
@@ -31,10 +33,14 @@ struct SimContext {
   // Reusable entity list for deterministic sorted iteration inside frame pipelines.
   std::vector<Entity> entities{};
 
+  // Optional: Arknights stage data used by StageRuntime.
+  const ArknightsLevel* arknights_level = nullptr;
+
   void reset_map(int width, int height) {
     map = Map(width, height);
     spatial.reset(width, height);
     path_cache.clear();
+    arknights_level = nullptr;
   }
 
   Snapshot snapshot() const {
@@ -53,6 +59,7 @@ struct SimContext {
     target_scratch.targets.clear();
     projectile_scratch.candidates.clear();
     projectile_scratch.hit_targets.clear();
+    arknights_level = nullptr;
   }
 };
 

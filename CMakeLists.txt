@@ -20,6 +20,7 @@ add_library(sim_core
   src/sim_core/src/core/rng.cpp
   src/sim_core/src/effects/effect.cpp
   src/sim_core/src/runtime/sim_state.cpp
+  src/sim_core/src/runtime/stage_runtime.cpp
   src/sim_core/src/scripting/script_vm.cpp
   src/sim_core/src/nav/map.cpp
   src/sim_core/src/nav/arknights_level.cpp
