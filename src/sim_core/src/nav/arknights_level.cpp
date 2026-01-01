@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <cstdint>
 #include <fstream>
 #include <sstream>
 #include <string_view>
@@ -30,6 +32,20 @@ bool parse_vec2(const nlohmann::json& j, vec<f32>& out) {
   out.x = static_cast<f32>(j.at("x").get<double>());
   out.y = static_cast<f32>(j.at("y").get<double>());
   return true;
+}
+
+std::uint64_t splitmix64(std::uint64_t& state) {
+  std::uint64_t z = (state += 0x9E3779B97F4A7C15ull);
+  z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
+  z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
+  return z ^ (z >> 31);
+}
+
+f32 unit_f32_from_u64(std::uint64_t x) {
+  // Use top 24 bits to build a float in [0, 1).
+  constexpr f32 kInv = 1.0f / static_cast<f32>(1u << 24);
+  const std::uint32_t top24 = static_cast<std::uint32_t>(x >> 40);
+  return static_cast<f32>(top24) * kInv;
 }
 
 TileFlags tile_flags_from_ak_tile(const nlohmann::json& tile) {
@@ -114,7 +130,10 @@ bool parse_checkpoint_type(std::string_view s, RouteMove::CheckPoint::Type& out)
 
 } // namespace
 
-bool load_arknights_level_file(const std::filesystem::path& path, ArknightsLevel& out, std::string* error) {
+bool load_arknights_level_file(const std::filesystem::path& path,
+                               ArknightsLevel& out,
+                               std::string* error,
+                               std::uint64_t random_seed) {
   out = ArknightsLevel{};
 
   std::ifstream file(path);
@@ -224,7 +243,8 @@ bool load_arknights_level_file(const std::filesystem::path& path, ArknightsLevel
   }
 
   out.routes.reserve(routes.size());
-  for (const auto& route_j : routes) {
+  for (std::size_t route_index = 0; route_index < routes.size(); ++route_index) {
+    const auto& route_j = routes.at(route_index);
     if (!route_j.is_object()) {
       continue;
     }
@@ -275,7 +295,8 @@ bool load_arknights_level_file(const std::filesystem::path& path, ArknightsLevel
       checkpoints = nlohmann::json::array();
     }
     if (checkpoints.is_array()) {
-      for (const auto& cp_j : checkpoints) {
+      for (std::size_t checkpoint_index = 0; checkpoint_index < checkpoints.size(); ++checkpoint_index) {
+        const auto& cp_j = checkpoints.at(checkpoint_index);
         if (!cp_j.is_object()) {
           continue;
         }
@@ -304,6 +325,26 @@ bool load_arknights_level_file(const std::filesystem::path& path, ArknightsLevel
 
             vec<f32> reach_offset{};
             (void)parse_vec2(cp_j.value("reachOffset", nlohmann::json{}), reach_offset);
+            const bool randomize_reach_offset = cp_j.value("randomizeReachOffset", false);
+            if (randomize_reach_offset) {
+              // Deterministic per (seed, routeIndex, checkpointIndex).
+              // Treat reachOffset as the max extents; sample uniformly within [-abs(x), +abs(x)] etc.
+              const f32 rx = static_cast<f32>(std::abs(static_cast<double>(reach_offset.x)));
+              const f32 ry = static_cast<f32>(std::abs(static_cast<double>(reach_offset.y)));
+
+              std::uint64_t s = random_seed;
+              s ^= 0xA3B195354A39B70Dull;
+              s ^= static_cast<std::uint64_t>(route_index) * 0x9E3779B97F4A7C15ull;
+              s ^= static_cast<std::uint64_t>(checkpoint_index) * 0xBF58476D1CE4E5B9ull;
+              s ^= static_cast<std::uint64_t>(static_cast<std::uint32_t>(t.x)) * 0x94D049BB133111EBull;
+              s ^= static_cast<std::uint64_t>(static_cast<std::uint32_t>(t.y)) * 0xD6E8FEB86659FD93ull;
+
+              const f32 ux = unit_f32_from_u64(splitmix64(s));
+              const f32 uy = unit_f32_from_u64(splitmix64(s));
+
+              reach_offset.x = (ux * 2.0f - 1.0f) * rx;
+              reach_offset.y = (uy * 2.0f - 1.0f) * ry;
+            }
             const f32 reach_distance = static_cast<f32>(cp_j.value("reachDistance", 0.0));
             const vec<f32> point = Map::tile_center(t) + reach_offset;
 
@@ -342,6 +383,24 @@ bool load_arknights_level_file(const std::filesystem::path& path, ArknightsLevel
             }
             vec<f32> reach_offset{};
             (void)parse_vec2(cp_j.value("reachOffset", nlohmann::json{}), reach_offset);
+            const bool randomize_reach_offset = cp_j.value("randomizeReachOffset", false);
+            if (randomize_reach_offset) {
+              const f32 rx = static_cast<f32>(std::abs(static_cast<double>(reach_offset.x)));
+              const f32 ry = static_cast<f32>(std::abs(static_cast<double>(reach_offset.y)));
+
+              std::uint64_t s = random_seed;
+              s ^= 0x0D6D6E9E7DABAE6Full;
+              s ^= static_cast<std::uint64_t>(route_index) * 0x9E3779B97F4A7C15ull;
+              s ^= static_cast<std::uint64_t>(checkpoint_index) * 0xBF58476D1CE4E5B9ull;
+              s ^= static_cast<std::uint64_t>(static_cast<std::uint32_t>(t.x)) * 0x94D049BB133111EBull;
+              s ^= static_cast<std::uint64_t>(static_cast<std::uint32_t>(t.y)) * 0xD6E8FEB86659FD93ull;
+
+              const f32 ux = unit_f32_from_u64(splitmix64(s));
+              const f32 uy = unit_f32_from_u64(splitmix64(s));
+
+              reach_offset.x = (ux * 2.0f - 1.0f) * rx;
+              reach_offset.y = (uy * 2.0f - 1.0f) * ry;
+            }
             rm.push_appear_at_pos(Map::tile_center(t) + reach_offset);
             break;
           }

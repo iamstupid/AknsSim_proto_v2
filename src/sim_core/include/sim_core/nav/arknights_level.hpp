@@ -29,7 +29,9 @@ struct ArknightsLevel {
 
 // Load an Arknights `level_*.json` file from ArknightsGameData.
 // Coordinate system: x -> right, y -> up (so JSON `row` maps to TileCoord.y).
-bool load_arknights_level_file(const std::filesystem::path& path, ArknightsLevel& out, std::string* error = nullptr);
+bool load_arknights_level_file(const std::filesystem::path& path,
+                               ArknightsLevel& out,
+                               std::string* error = nullptr,
+                               std::uint64_t random_seed = 0);
 
 } // namespace arksim
-
