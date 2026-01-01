@@ -2,6 +2,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <vector>
 
@@ -1880,14 +1881,71 @@ TEST_CASE("Load ArknightsGameData level_a001_01 map and validate ground pathing"
 
   // All WALK routes in this file should be able to reach their end tile on ground.
   for (const auto& route : level.routes) {
-    if (route.route.mode != arksim::MoveMode::Ground) {
+    if (route.mode != arksim::MoveMode::Ground) {
       continue;
     }
-    const arksim::TileCoord end_tile = route.route.end_tile;
+    const arksim::TileCoord end_tile = route.end_tile;
     if (!ctx.map.passable(end_tile, arksim::MoveMode::Ground)) {
       continue;
     }
-    const arksim::PathMap& pm = ctx.path_cache.get_ground(end_tile, route.route.allow_diagonal_move);
+    const arksim::PathMap& pm = ctx.path_cache.get_ground(end_tile, route.allow_diagonal_move);
     CHECK(pm.dist(route.start_tile) != arksim::PathMap::kInf);
   }
+}
+
+TEST_CASE("ArknightsRoute instantiate randomizeReachOffset uses RNG at spawn-time") {
+  arksim::ArknightsRoute fixed;
+  fixed.mode = arksim::MoveMode::Ground;
+  fixed.start_tile = arksim::TileCoord{0, 0};
+  fixed.end_tile = arksim::TileCoord{2, 0};
+
+  arksim::ArknightsCheckpoint fixed_cp;
+  fixed_cp.type = arksim::RouteMove::CheckPoint::Type::Move;
+  fixed_cp.tile = arksim::TileCoord{1, 0};
+  fixed_cp.reach_offset = arksim::vec<arksim::f32>{0.25f, -0.1f};
+  fixed_cp.randomize_reach_offset = false;
+  fixed_cp.reach_distance = 0.0f;
+  fixed.checkpoints.push_back(fixed_cp);
+
+  arksim::Rng rng1(123);
+  const auto before_fixed = rng1.snapshot();
+  const arksim::RouteMove fixed_rm = fixed.instantiate(rng1);
+  const auto after_fixed = rng1.snapshot();
+
+  CHECK(before_fixed.s0 == after_fixed.s0);
+  CHECK(before_fixed.s1 == after_fixed.s1);
+  CHECK(before_fixed.s2 == after_fixed.s2);
+  CHECK(before_fixed.s3 == after_fixed.s3);
+
+  REQUIRE(fixed_rm.cps.size() == 1);
+  const auto& cp0 = fixed_rm.cps[0];
+  const auto center0 = arksim::Map::tile_center(cp0.target_tile);
+  CHECK(cp0.target_point.x == doctest::Approx(center0.x + fixed_cp.reach_offset.x));
+  CHECK(cp0.target_point.y == doctest::Approx(center0.y + fixed_cp.reach_offset.y));
+
+  arksim::ArknightsRoute randomized = fixed;
+  randomized.checkpoints[0].randomize_reach_offset = true;
+  randomized.checkpoints[0].reach_offset = arksim::vec<arksim::f32>{0.5f, 0.25f}; // treat as extents
+
+  arksim::Rng rng2(123);
+  const auto before_rand = rng2.snapshot();
+  const arksim::RouteMove rand_rm = randomized.instantiate(rng2);
+  const auto after_rand = rng2.snapshot();
+
+  const bool rng_advanced = (before_rand.s0 != after_rand.s0) || (before_rand.s1 != after_rand.s1) ||
+                            (before_rand.s2 != after_rand.s2) || (before_rand.s3 != after_rand.s3);
+  CHECK(rng_advanced);
+
+  REQUIRE(rand_rm.cps.size() == 1);
+  const auto& cp1 = rand_rm.cps[0];
+  const auto center1 = arksim::Map::tile_center(cp1.target_tile);
+  CHECK(std::abs(cp1.target_point.x - center1.x) <= 0.5f);
+  CHECK(std::abs(cp1.target_point.y - center1.y) <= 0.25f);
+
+  // Deterministic: same RNG state -> same instantiation.
+  rng2.restore(before_rand);
+  const arksim::RouteMove rand_rm2 = randomized.instantiate(rng2);
+  REQUIRE(rand_rm2.cps.size() == 1);
+  CHECK(rand_rm2.cps[0].target_point.x == doctest::Approx(cp1.target_point.x));
+  CHECK(rand_rm2.cps[0].target_point.y == doctest::Approx(cp1.target_point.y));
 }

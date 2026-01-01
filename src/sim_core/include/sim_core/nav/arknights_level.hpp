@@ -10,16 +10,42 @@
 
 namespace arksim {
 
-struct ArknightsRoute {
-  // A fully initialized RouteMove template (ready to be copied onto an enemy entity).
-  RouteMove route{};
+class Rng;
 
-  // Spawn position for the route (cursor/world position, not entity pos).
+struct ArknightsCheckpoint {
+  RouteMove::CheckPoint::Type type = RouteMove::CheckPoint::Type::Move;
+
+  // For MOVE/PATROL_MOVE/APPEAR_AT_POS checkpoints.
+  TileCoord tile{};
+  vec<f32> reach_offset{};
+  bool randomize_reach_offset = false;
+  f32 reach_distance = 0.0f;
+
+  // For WAIT_* checkpoints.
+  double time = 0.0;
+
+  // ALERT / WAIT_BOSSRUSH_WAVE (optional; not fully wired in gameplay yet).
+  std::uint32_t alert_id = 0;
+  std::uint32_t wait_regions = 0;
+};
+
+struct ArknightsRoute {
+  MoveMode mode = MoveMode::Ground;
+  bool allow_diagonal_move = true;
+  bool visit_every_checkpoint = false;
+  f32 move_multiplier = 0.5f;
+
   TileCoord start_tile{};
-  vec<f32> start_point{};
+  TileCoord end_tile{};
 
   vec<f32> spawn_offset{};
   vec<f32> spawn_random_range{};
+
+  std::vector<ArknightsCheckpoint> checkpoints{};
+
+  // Create a RouteMove instance for a spawned unit.
+  // Randomization (e.g. randomizeReachOffset) is applied here using the provided RNG.
+  RouteMove instantiate(Rng& rng) const;
 };
 
 struct ArknightsLevel {
@@ -31,7 +57,6 @@ struct ArknightsLevel {
 // Coordinate system: x -> right, y -> up (so JSON `row` maps to TileCoord.y).
 bool load_arknights_level_file(const std::filesystem::path& path,
                                ArknightsLevel& out,
-                               std::string* error = nullptr,
-                               std::uint64_t random_seed = 0);
+                               std::string* error = nullptr);
 
 } // namespace arksim

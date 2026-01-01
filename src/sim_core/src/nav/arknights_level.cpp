@@ -3,12 +3,13 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
-#include <cstdint>
 #include <fstream>
 #include <sstream>
 #include <string_view>
 
 #include <nlohmann/json.hpp>
+
+#include "sim_core/core/rng.hpp"
 
 namespace arksim {
 namespace {
@@ -32,20 +33,6 @@ bool parse_vec2(const nlohmann::json& j, vec<f32>& out) {
   out.x = static_cast<f32>(j.at("x").get<double>());
   out.y = static_cast<f32>(j.at("y").get<double>());
   return true;
-}
-
-std::uint64_t splitmix64(std::uint64_t& state) {
-  std::uint64_t z = (state += 0x9E3779B97F4A7C15ull);
-  z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
-  z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
-  return z ^ (z >> 31);
-}
-
-f32 unit_f32_from_u64(std::uint64_t x) {
-  // Use top 24 bits to build a float in [0, 1).
-  constexpr f32 kInv = 1.0f / static_cast<f32>(1u << 24);
-  const std::uint32_t top24 = static_cast<std::uint32_t>(x >> 40);
-  return static_cast<f32>(top24) * kInv;
 }
 
 TileFlags tile_flags_from_ak_tile(const nlohmann::json& tile) {
@@ -132,8 +119,7 @@ bool parse_checkpoint_type(std::string_view s, RouteMove::CheckPoint::Type& out)
 
 bool load_arknights_level_file(const std::filesystem::path& path,
                                ArknightsLevel& out,
-                               std::string* error,
-                               std::uint64_t random_seed) {
+                               std::string* error) {
   out = ArknightsLevel{};
 
   std::ifstream file(path);
@@ -253,6 +239,9 @@ bool load_arknights_level_file(const std::filesystem::path& path,
     MoveMode mode = MoveMode::Ground;
     if (motion == "FLY") {
       mode = MoveMode::Air;
+    } else if (motion != "WALK") {
+      // Unknown/unsupported motion mode for now.
+      continue;
     }
 
     if (!route_j.contains("startPosition") || !route_j.contains("endPosition")) {
@@ -281,14 +270,15 @@ bool load_arknights_level_file(const std::filesystem::path& path,
     (void)parse_vec2(route_j.value("spawnOffset", nlohmann::json{}), spawn_offset);
     (void)parse_vec2(route_j.value("spawnRandomRange", nlohmann::json{}), spawn_random_range);
 
-    RouteMove rm;
-    rm.clear_route();
-    rm.mode = mode;
-    rm.move_multiplier = move_multiplier;
-    rm.allow_diagonal_move = route_j.value("allowDiagonalMove", rm.allow_diagonal_move);
-    rm.visit_every_checkpoint = route_j.value("visitEveryCheckPoint", rm.visit_every_checkpoint);
-
-    rm.set_end(end_tile, Map::tile_center(end_tile));
+    ArknightsRoute route;
+    route.mode = mode;
+    route.move_multiplier = move_multiplier;
+    route.allow_diagonal_move = route_j.value("allowDiagonalMove", route.allow_diagonal_move);
+    route.visit_every_checkpoint = route_j.value("visitEveryCheckPoint", route.visit_every_checkpoint);
+    route.start_tile = start_tile;
+    route.end_tile = end_tile;
+    route.spawn_offset = spawn_offset;
+    route.spawn_random_range = spawn_random_range;
 
     auto checkpoints = route_j.value("checkpoints", nlohmann::json::array());
     if (checkpoints.is_null()) {
@@ -326,50 +316,33 @@ bool load_arknights_level_file(const std::filesystem::path& path,
             vec<f32> reach_offset{};
             (void)parse_vec2(cp_j.value("reachOffset", nlohmann::json{}), reach_offset);
             const bool randomize_reach_offset = cp_j.value("randomizeReachOffset", false);
-            if (randomize_reach_offset) {
-              // Deterministic per (seed, routeIndex, checkpointIndex).
-              // Treat reachOffset as the max extents; sample uniformly within [-abs(x), +abs(x)] etc.
-              const f32 rx = static_cast<f32>(std::abs(static_cast<double>(reach_offset.x)));
-              const f32 ry = static_cast<f32>(std::abs(static_cast<double>(reach_offset.y)));
-
-              std::uint64_t s = random_seed;
-              s ^= 0xA3B195354A39B70Dull;
-              s ^= static_cast<std::uint64_t>(route_index) * 0x9E3779B97F4A7C15ull;
-              s ^= static_cast<std::uint64_t>(checkpoint_index) * 0xBF58476D1CE4E5B9ull;
-              s ^= static_cast<std::uint64_t>(static_cast<std::uint32_t>(t.x)) * 0x94D049BB133111EBull;
-              s ^= static_cast<std::uint64_t>(static_cast<std::uint32_t>(t.y)) * 0xD6E8FEB86659FD93ull;
-
-              const f32 ux = unit_f32_from_u64(splitmix64(s));
-              const f32 uy = unit_f32_from_u64(splitmix64(s));
-
-              reach_offset.x = (ux * 2.0f - 1.0f) * rx;
-              reach_offset.y = (uy * 2.0f - 1.0f) * ry;
-            }
             const f32 reach_distance = static_cast<f32>(cp_j.value("reachDistance", 0.0));
-            const vec<f32> point = Map::tile_center(t) + reach_offset;
 
-            if (type == RouteMove::CheckPoint::Type::Move) {
-              rm.push_move_cp(t, point, reach_distance);
-            } else {
-              rm.push_patrol_move_cp(t, point, reach_distance);
-            }
+            ArknightsCheckpoint cp;
+            cp.type = type;
+            cp.tile = t;
+            cp.reach_offset = reach_offset;
+            cp.randomize_reach_offset = randomize_reach_offset;
+            cp.reach_distance = reach_distance;
+            route.checkpoints.push_back(std::move(cp));
             break;
           }
           case RouteMove::CheckPoint::Type::WaitForSeconds:
-            rm.push_wait_seconds(time);
-            break;
           case RouteMove::CheckPoint::Type::WaitForPlayTime:
-            rm.push_wait_play_time(time);
-            break;
           case RouteMove::CheckPoint::Type::WaitCurrentFragmentTime:
-            rm.push_wait_fragment_time(time);
+          case RouteMove::CheckPoint::Type::WaitCurrentWaveTime: {
+            ArknightsCheckpoint cp;
+            cp.type = type;
+            cp.time = time;
+            route.checkpoints.push_back(std::move(cp));
             break;
-          case RouteMove::CheckPoint::Type::WaitCurrentWaveTime:
-            rm.push_wait_wave_time(time);
+          }
+          case RouteMove::CheckPoint::Type::Disappear: {
+            ArknightsCheckpoint cp;
+            cp.type = type;
+            route.checkpoints.push_back(std::move(cp));
             break;
-          case RouteMove::CheckPoint::Type::Disappear:
-            rm.push_disappear_cp();
-            break;
+          }
           case RouteMove::CheckPoint::Type::AppearAtPos: {
             if (!cp_j.contains("position") || !cp_j.at("position").is_object()) {
               continue;
@@ -384,50 +357,104 @@ bool load_arknights_level_file(const std::filesystem::path& path,
             vec<f32> reach_offset{};
             (void)parse_vec2(cp_j.value("reachOffset", nlohmann::json{}), reach_offset);
             const bool randomize_reach_offset = cp_j.value("randomizeReachOffset", false);
-            if (randomize_reach_offset) {
-              const f32 rx = static_cast<f32>(std::abs(static_cast<double>(reach_offset.x)));
-              const f32 ry = static_cast<f32>(std::abs(static_cast<double>(reach_offset.y)));
 
-              std::uint64_t s = random_seed;
-              s ^= 0x0D6D6E9E7DABAE6Full;
-              s ^= static_cast<std::uint64_t>(route_index) * 0x9E3779B97F4A7C15ull;
-              s ^= static_cast<std::uint64_t>(checkpoint_index) * 0xBF58476D1CE4E5B9ull;
-              s ^= static_cast<std::uint64_t>(static_cast<std::uint32_t>(t.x)) * 0x94D049BB133111EBull;
-              s ^= static_cast<std::uint64_t>(static_cast<std::uint32_t>(t.y)) * 0xD6E8FEB86659FD93ull;
-
-              const f32 ux = unit_f32_from_u64(splitmix64(s));
-              const f32 uy = unit_f32_from_u64(splitmix64(s));
-
-              reach_offset.x = (ux * 2.0f - 1.0f) * rx;
-              reach_offset.y = (uy * 2.0f - 1.0f) * ry;
-            }
-            rm.push_appear_at_pos(Map::tile_center(t) + reach_offset);
+            ArknightsCheckpoint cp;
+            cp.type = type;
+            cp.tile = t;
+            cp.reach_offset = reach_offset;
+            cp.randomize_reach_offset = randomize_reach_offset;
+            route.checkpoints.push_back(std::move(cp));
             break;
           }
-          case RouteMove::CheckPoint::Type::Alert:
-            rm.push_alert_cp(static_cast<std::uint32_t>(cp_j.value("alertId", 0)));
+          case RouteMove::CheckPoint::Type::Alert: {
+            ArknightsCheckpoint cp;
+            cp.type = type;
+            cp.alert_id = static_cast<std::uint32_t>(cp_j.value("alertId", 0));
+            route.checkpoints.push_back(std::move(cp));
             break;
-          case RouteMove::CheckPoint::Type::WaitBossrushWave:
-            rm.push_wait_bossrush_wave(static_cast<std::uint32_t>(cp_j.value("waitRegions", 0)));
+          }
+          case RouteMove::CheckPoint::Type::WaitBossrushWave: {
+            ArknightsCheckpoint cp;
+            cp.type = type;
+            cp.wait_regions = static_cast<std::uint32_t>(cp_j.value("waitRegions", 0));
+            route.checkpoints.push_back(std::move(cp));
             break;
+          }
           default:
             break;
         }
       }
     }
 
-    const vec<f32> start_point = Map::tile_center(start_tile) + spawn_offset;
-
-    ArknightsRoute r;
-    r.route = std::move(rm);
-    r.start_tile = start_tile;
-    r.start_point = start_point;
-    r.spawn_offset = spawn_offset;
-    r.spawn_random_range = spawn_random_range;
-    out.routes.push_back(std::move(r));
+    out.routes.push_back(std::move(route));
   }
 
   return true;
+}
+
+RouteMove ArknightsRoute::instantiate(Rng& rng) const {
+  RouteMove rm;
+  rm.clear_route();
+  rm.mode = mode;
+  rm.allow_diagonal_move = allow_diagonal_move;
+  rm.visit_every_checkpoint = visit_every_checkpoint;
+  rm.move_multiplier = move_multiplier;
+  rm.set_end(end_tile, Map::tile_center(end_tile));
+
+  for (const ArknightsCheckpoint& cp : checkpoints) {
+    auto sample_offset = [&]() -> vec<f32> {
+      if (!cp.randomize_reach_offset) {
+        return cp.reach_offset;
+      }
+
+      const f32 rx = std::abs(cp.reach_offset.x);
+      const f32 ry = std::abs(cp.reach_offset.y);
+      return vec<f32>{rng.uniform_f32(-rx, rx), rng.uniform_f32(-ry, ry)};
+    };
+
+    switch (cp.type) {
+      case RouteMove::CheckPoint::Type::Move: {
+        const vec<f32> point = Map::tile_center(cp.tile) + sample_offset();
+        rm.push_move_cp(cp.tile, point, cp.reach_distance);
+        break;
+      }
+      case RouteMove::CheckPoint::Type::PatrolMove: {
+        const vec<f32> point = Map::tile_center(cp.tile) + sample_offset();
+        rm.push_patrol_move_cp(cp.tile, point, cp.reach_distance);
+        break;
+      }
+      case RouteMove::CheckPoint::Type::WaitForSeconds:
+        rm.push_wait_seconds(cp.time);
+        break;
+      case RouteMove::CheckPoint::Type::WaitForPlayTime:
+        rm.push_wait_play_time(cp.time);
+        break;
+      case RouteMove::CheckPoint::Type::WaitCurrentFragmentTime:
+        rm.push_wait_fragment_time(cp.time);
+        break;
+      case RouteMove::CheckPoint::Type::WaitCurrentWaveTime:
+        rm.push_wait_wave_time(cp.time);
+        break;
+      case RouteMove::CheckPoint::Type::Disappear:
+        rm.push_disappear_cp();
+        break;
+      case RouteMove::CheckPoint::Type::AppearAtPos: {
+        const vec<f32> cursor_pos = Map::tile_center(cp.tile) + sample_offset();
+        rm.push_appear_at_pos(cursor_pos);
+        break;
+      }
+      case RouteMove::CheckPoint::Type::Alert:
+        rm.push_alert_cp(cp.alert_id);
+        break;
+      case RouteMove::CheckPoint::Type::WaitBossrushWave:
+        rm.push_wait_bossrush_wave(cp.wait_regions);
+        break;
+      default:
+        break;
+    }
+  }
+
+  return rm;
 }
 
 } // namespace arksim
