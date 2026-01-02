@@ -12,3 +12,7 @@
 *.suo
 *.vcxproj*
 *.log
+
+# Large/vendor deps (use submodules/vcpkg instead)
+/flecs-*.zip
+/third_party/flecs-*/
