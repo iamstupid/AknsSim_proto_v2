@@ -5,6 +5,7 @@
 #include <cmath>
 #include <fstream>
 #include <limits>
+#include <optional>
 #include <sstream>
 #include <string_view>
 
@@ -33,6 +34,28 @@ bool parse_vec2(const nlohmann::json& j, vec<f32>& out) {
   }
   out.x = static_cast<f32>(j.at("x").get<double>());
   out.y = static_cast<f32>(j.at("y").get<double>());
+  return true;
+}
+
+bool load_defined_double_opt(const nlohmann::json& attrs, const char* name, std::optional<double>& out) {
+  if (!attrs.contains(name)) {
+    return false;
+  }
+  const auto& node = attrs.at(name);
+  if (!node.is_object()) {
+    return false;
+  }
+  if (!node.value("m_defined", false)) {
+    return false;
+  }
+  if (!node.contains("m_value")) {
+    return false;
+  }
+  const auto& v = node.at("m_value");
+  if (!v.is_number()) {
+    return false;
+  }
+  out = v.get<double>();
   return true;
 }
 
@@ -414,6 +437,52 @@ bool load_arknights_level_file(const std::filesystem::path& path,
     }
   }
 
+  // Enemy DB refs: stage-local overrides for enemy_database entries.
+  out.enemy_db_refs.clear();
+  const nlohmann::json enemy_db_refs = root.contains("enemyDbRefs") ? root.at("enemyDbRefs") : nlohmann::json::array();
+  if (enemy_db_refs.is_array()) {
+    for (const auto& ref_j : enemy_db_refs) {
+      if (!ref_j.is_object()) {
+        continue;
+      }
+
+      const bool use_db = ref_j.value("useDb", false);
+      if (!use_db) {
+        continue;
+      }
+
+      const std::string id = ref_j.value("id", "");
+      if (id.empty()) {
+        continue;
+      }
+
+      ArknightsEnemyRef ref;
+      ref.id = id;
+      ref.level = ref_j.value("level", 0);
+
+      if (ref_j.contains("overwrittenData") && ref_j.at("overwrittenData").is_object()) {
+        const auto& od = ref_j.at("overwrittenData");
+        if (od.contains("attributes") && od.at("attributes").is_object()) {
+          const auto& attrs = od.at("attributes");
+          (void)load_defined_double_opt(attrs, "maxHp", ref.overridden.max_hp);
+          (void)load_defined_double_opt(attrs, "atk", ref.overridden.atk);
+          (void)load_defined_double_opt(attrs, "def", ref.overridden.def);
+
+          std::optional<double> mr_percent;
+          if (load_defined_double_opt(attrs, "magicResistance", mr_percent) && mr_percent.has_value()) {
+            ref.overridden.magic_res = *mr_percent / 100.0;
+          }
+
+          (void)load_defined_double_opt(attrs, "moveSpeed", ref.overridden.move_speed);
+          (void)load_defined_double_opt(attrs, "attackSpeed", ref.overridden.attack_speed);
+          (void)load_defined_double_opt(attrs, "baseAttackTime", ref.overridden.base_attack_time);
+        }
+      }
+
+      out.enemy_db_refs.push_back(std::move(ref));
+    }
+  }
+
   // Spawn schedule (waves -> fragments -> actions).
   // We currently flatten only SPAWN actions into `out.spawns`, but still account for
   // non-SPAWN actions when computing wave boundaries for sequential scheduling.
@@ -580,6 +649,15 @@ RouteMove ArknightsRoute::instantiate(Rng& rng) const {
   }
 
   return rm;
+}
+
+const ArknightsEnemyRef* ArknightsLevel::find_enemy_db_ref(std::string_view key) const {
+  for (const auto& ref : enemy_db_refs) {
+    if (ref.id == key) {
+      return &ref;
+    }
+  }
+  return nullptr;
 }
 
 } // namespace arksim

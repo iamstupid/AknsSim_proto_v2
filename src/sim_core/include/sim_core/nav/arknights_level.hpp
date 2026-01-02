@@ -2,7 +2,9 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "sim_core/components/route_move.hpp"
@@ -69,12 +71,34 @@ struct ArknightsSpawnEvent {
   std::string key{};
 };
 
+struct ArknightsEnemyOverride {
+  std::optional<double> max_hp{};
+  std::optional<double> atk{};
+  std::optional<double> def{};
+  // Magic resistance as a fraction (0..1). Arknights data is usually stored as percent (0..100).
+  std::optional<double> magic_res{};
+  std::optional<double> move_speed{};
+  // Attack speed percent (100 == normal).
+  std::optional<double> attack_speed{};
+  // Base attack interval in seconds.
+  std::optional<double> base_attack_time{};
+};
+
+struct ArknightsEnemyRef {
+  std::string id{};
+  int level = 0;
+  ArknightsEnemyOverride overridden{};
+};
+
 struct ArknightsLevel {
   Map map{};
   std::vector<ArknightsRoute> routes{};
   std::vector<ArknightsSpawnEvent> spawns{};
+  std::vector<ArknightsEnemyRef> enemy_db_refs{};
 
   int max_life_point = 0;
+
+  const ArknightsEnemyRef* find_enemy_db_ref(std::string_view key) const;
 };
 
 // Load an Arknights `level_*.json` file from ArknightsGameData.

@@ -40,6 +40,14 @@ struct Attack {
   // Kind::Tiles
   std::vector<TileCoord> range_tiles{};
 
+  // If true, `range_tiles` are treated as offsets relative to the source's current tile (derived from Position.pos + center_offset).
+  // This is used for Arknights-style range patterns from `range_table.json`.
+  bool range_tiles_relative = false;
+
+  // If true and `range_tiles_relative` is enabled, offsets are rotated based on the source's facing direction (Position.dir),
+  // assuming the range pattern is authored for facing +X (right).
+  bool range_tiles_rotate_with_dir = false;
+
   // Kind::Circle: center is derived from Position.pos + center_offset.
   vec<f32> center_offset{};
   f32 range_radius = 0.0f;
@@ -81,6 +89,9 @@ struct Attack {
 
   // Cache updated by periodic scanning during Idle/PreDelay.
   std::vector<SpatialEntry> cached_candidates{};
+
+  // Runtime cache: absolute tiles computed from `range_tiles` when using relative tile ranges.
+  std::vector<TileCoord> cached_world_tiles{};
 
   // Fire hook: called when PreDelay ends. Implementations can emit DamageEffect, spawn Projectile, etc.
   TriggerProcessor<World&, SimState*, Entity, std::span<const Entity>, Attack&> OnFire;

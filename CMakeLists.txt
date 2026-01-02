@@ -24,6 +24,8 @@ add_library(sim_core
   src/sim_core/src/scripting/script_vm.cpp
   src/sim_core/src/nav/map.cpp
   src/sim_core/src/nav/arknights_level.cpp
+  src/sim_core/src/nav/arknights_enemy_database.cpp
+  src/sim_core/src/nav/arknights_range_table.cpp
   src/sim_core/src/nav/bresenham_cache.cpp
   src/sim_core/src/nav/path_map.cpp
   src/sim_core/src/spatial/spatial_grid.cpp

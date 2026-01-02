@@ -13,6 +13,7 @@
 namespace arksim {
 
 struct ArknightsLevel;
+struct ArknightsEnemyDatabase;
 
 // Shared per-simulation context that does not belong in ECS:
 // - Map + navigation caches
@@ -35,12 +36,14 @@ struct SimContext {
 
   // Optional: Arknights stage data used by StageRuntime.
   const ArknightsLevel* arknights_level = nullptr;
+  const ArknightsEnemyDatabase* arknights_enemy_db = nullptr;
 
   void reset_map(int width, int height) {
     map = Map(width, height);
     spatial.reset(width, height);
     path_cache.clear();
     arknights_level = nullptr;
+    arknights_enemy_db = nullptr;
   }
 
   Snapshot snapshot() const {
@@ -60,6 +63,7 @@ struct SimContext {
     projectile_scratch.candidates.clear();
     projectile_scratch.hit_targets.clear();
     arknights_level = nullptr;
+    arknights_enemy_db = nullptr;
   }
 };
 

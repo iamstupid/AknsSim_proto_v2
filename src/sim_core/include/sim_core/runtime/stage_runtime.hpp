@@ -8,6 +8,7 @@
 namespace arksim {
 
 struct ArknightsLevel;
+struct ArknightsEnemyDatabase;
 struct SimContext;
 class SimState;
 
@@ -28,6 +29,9 @@ struct StageRuntime {
 
 // Convenience helper: set ctx.map + ctx.arknights_level and (re)start StageRuntime on sim.world_entity().
 void start_arknights_stage(SimState& sim, SimContext& ctx, const ArknightsLevel& level);
+void start_arknights_stage(SimState& sim,
+                           SimContext& ctx,
+                           const ArknightsLevel& level,
+                           const ArknightsEnemyDatabase& enemies);
 
 } // namespace arksim
-

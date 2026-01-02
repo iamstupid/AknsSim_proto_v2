@@ -9,6 +9,47 @@
 #include "sim_core/runtime/sim_state.hpp"
 
 namespace arksim {
+namespace {
+
+enum class Facing4 : std::uint8_t {
+  Right = 0,
+  Up = 1,
+  Left = 2,
+  Down = 3,
+};
+
+Facing4 facing_from_dir(const vec<f32>& dir) {
+  const f32 ax = std::abs(dir.x);
+  const f32 ay = std::abs(dir.y);
+
+  if (!(ax > 0.0f) && !(ay > 0.0f)) {
+    return Facing4::Right;
+  }
+
+  if (ax >= ay) {
+    return (dir.x >= 0.0f) ? Facing4::Right : Facing4::Left;
+  }
+  return (dir.y >= 0.0f) ? Facing4::Up : Facing4::Down;
+}
+
+TileCoord rotate_offset(TileCoord o, Facing4 facing) {
+  switch (facing) {
+    case Facing4::Right:
+      return o;
+    case Facing4::Up:
+      // (x, y) -> (-y, x)
+      return TileCoord{-o.y, o.x};
+    case Facing4::Left:
+      // (x, y) -> (-x, -y)
+      return TileCoord{-o.x, -o.y};
+    case Facing4::Down:
+      // (x, y) -> (y, -x)
+      return TileCoord{o.y, -o.x};
+  }
+  return o;
+}
+
+} // namespace
 
 std::uint32_t Attack::atk_speed_mul_(float atk_speed) {
   float min_as = Attack::atk_speed_min;
@@ -91,6 +132,7 @@ void Attack::reset_to_idle_(bool force_scan) {
   post_elapsed_scaled = 0;
   interval_target = 0;
   cached_candidates.clear();
+  cached_world_tiles.clear();
   if (force_scan) {
     scan_remain = 0;
   }
@@ -164,7 +206,22 @@ bool Attack::scan_(World& world,
   switch (range_kind) {
     case TargetRange::Kind::Tiles: {
       std::span<const TileCoord> tiles;
-      if (!range_tiles.empty()) {
+      if (range_tiles_relative) {
+        cached_world_tiles.clear();
+        cached_world_tiles.reserve(range_tiles.size());
+
+        const TileCoord base = Map::tile_at(center);
+        const Facing4 facing = range_tiles_rotate_with_dir ? facing_from_dir(pos->dir) : Facing4::Right;
+
+        for (const TileCoord off : range_tiles) {
+          const TileCoord rot = range_tiles_rotate_with_dir ? rotate_offset(off, facing) : off;
+          cached_world_tiles.push_back(TileCoord{base.x + rot.x, base.y + rot.y});
+        }
+
+        if (!cached_world_tiles.empty()) {
+          tiles = std::span<const TileCoord>(cached_world_tiles.data(), cached_world_tiles.size());
+        }
+      } else if (!range_tiles.empty()) {
         tiles = std::span<const TileCoord>(range_tiles.data(), range_tiles.size());
       }
       grid->collect_tiles(tiles, required, candidates);

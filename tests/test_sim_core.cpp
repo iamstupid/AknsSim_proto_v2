@@ -25,7 +25,9 @@
 #include "sim_core/components/unbalance.hpp"
 #include "sim_core/nav/bresenham_cache.hpp"
 #include "sim_core/nav/map.hpp"
+#include "sim_core/nav/arknights_enemy_database.hpp"
 #include "sim_core/nav/arknights_level.hpp"
+#include "sim_core/nav/arknights_range_table.hpp"
 #include "sim_core/nav/path_map.hpp"
 #include "sim_core/core/rng.hpp"
 #include "sim_core/runtime/sim_context.hpp"
@@ -1853,6 +1855,210 @@ TEST_CASE("RouteMove visit_every_checkpoint blocks reached_end until complete") 
   CHECK(!world.get<arksim::RouteMove>(e).reached_end);
 }
 
+TEST_CASE("Load ArknightsGameData enemy_database enemy_1027_mob base stats") {
+  namespace fs = std::filesystem;
+
+  const fs::path repo_root = fs::path(__FILE__).parent_path().parent_path();
+  const fs::path enemy_db_path =
+      repo_root / "data" / "ArknightsGameData" / "zh_CN" / "gamedata" / "levels" / "enemydata" / "enemy_database.json";
+
+  if (!fs::exists(enemy_db_path)) {
+    // Submodule not initialized in this environment.
+    return;
+  }
+
+  arksim::ArknightsEnemyDatabase db;
+  std::string err;
+  REQUIRE(arksim::load_arknights_enemy_database_file(enemy_db_path, db, &err));
+
+  const auto* mob = db.find("enemy_1027_mob", /*level=*/0);
+  REQUIRE(mob != nullptr);
+  CHECK(mob->apply_way == arksim::ArknightsEnemyStats::ApplyWay::Melee);
+  CHECK(mob->has_range_radius == false);
+  CHECK(mob->max_hp == doctest::Approx(1700.0));
+  CHECK(mob->atk == doctest::Approx(250.0));
+  CHECK(mob->def == doctest::Approx(50.0));
+  CHECK(mob->magic_res == doctest::Approx(0.0));
+  CHECK(mob->move_speed == doctest::Approx(1.1));
+  CHECK(mob->attack_speed == doctest::Approx(100.0));
+  CHECK(mob->base_attack_time == doctest::Approx(2.0));
+}
+
+TEST_CASE("Load ArknightsGameData enemy_database enemy_10007_trspsb ranged applyWay and rangeRadius") {
+  namespace fs = std::filesystem;
+
+  const fs::path repo_root = fs::path(__FILE__).parent_path().parent_path();
+  const fs::path enemy_db_path =
+      repo_root / "data" / "ArknightsGameData" / "zh_CN" / "gamedata" / "levels" / "enemydata" / "enemy_database.json";
+
+  if (!fs::exists(enemy_db_path)) {
+    // Submodule not initialized in this environment.
+    return;
+  }
+
+  arksim::ArknightsEnemyDatabase db;
+  REQUIRE(arksim::load_arknights_enemy_database_file(enemy_db_path, db));
+
+  const auto* enemy = db.find("enemy_10007_trspsb", /*level=*/0);
+  REQUIRE(enemy != nullptr);
+  CHECK(enemy->apply_way == arksim::ArknightsEnemyStats::ApplyWay::Ranged);
+  CHECK(enemy->has_range_radius == true);
+  CHECK(enemy->range_radius == doctest::Approx(0.9));
+}
+
+TEST_CASE("Load ArknightsGameData range_table 1-1 offsets") {
+  namespace fs = std::filesystem;
+
+  const fs::path repo_root = fs::path(__FILE__).parent_path().parent_path();
+  const fs::path range_path = repo_root / "data" / "ArknightsGameData" / "zh_CN" / "gamedata" / "excel" / "range_table.json";
+
+  if (!fs::exists(range_path)) {
+    // Submodule not initialized in this environment.
+    return;
+  }
+
+  arksim::ArknightsRangeTable table;
+  REQUIRE(arksim::load_arknights_range_table_file(range_path, table));
+
+  const auto* r = table.find("1-1");
+  REQUIRE(r != nullptr);
+  REQUIRE(r->offsets.size() == 2);
+  CHECK(r->offsets[0].x == 0);
+  CHECK(r->offsets[0].y == 0);
+  CHECK(r->offsets[1].x == 1);
+  CHECK(r->offsets[1].y == 0);
+}
+
+TEST_CASE("Attack tiles range relative selects targets from range_table") {
+  namespace fs = std::filesystem;
+
+  const fs::path repo_root = fs::path(__FILE__).parent_path().parent_path();
+  const fs::path range_path = repo_root / "data" / "ArknightsGameData" / "zh_CN" / "gamedata" / "excel" / "range_table.json";
+
+  if (!fs::exists(range_path)) {
+    // Submodule not initialized in this environment.
+    return;
+  }
+
+  arksim::ArknightsRangeTable table;
+  REQUIRE(arksim::load_arknights_range_table_file(range_path, table));
+  const auto* range = table.find("1-1");
+  REQUIRE(range != nullptr);
+
+  arksim::SimState sim(1);
+  sim.set_tick_rate(1, 10); // 0.1s
+  arksim::SimContext ctx;
+  ctx.reset_map(5, 5);
+
+  arksim::World& world = sim.world();
+  const arksim::TileCoord src_tile{2, 2};
+  const arksim::TileCoord tgt_tile{3, 2};
+
+  arksim::Entity attacker = world.create();
+  arksim::Position ap;
+  ap.pos = arksim::Map::tile_center(src_tile);
+  ap.dir = arksim::vec<arksim::f32>{1.0f, 0.0f};
+  world.add<arksim::Position>(attacker, ap);
+
+  arksim::Entity target = world.create();
+  world.add<arksim::Position>(target, arksim::Position{arksim::Map::tile_center(tgt_tile)});
+  world.add<arksim::Area>(target, arksim::Area{arksim::Area::Type::Circle, arksim::vec<arksim::f32>{0.1f, 0.0f}});
+  world.add<arksim::Spatial>(target, arksim::Spatial{arksim::TypeFlags::Enemy | arksim::TypeFlags::Normal});
+
+  arksim::Attack atk;
+  atk.scan_interval = 0;
+  atk.range_kind = arksim::TargetRange::Kind::Tiles;
+  atk.range_grid = arksim::TargetRange::Grid::Center;
+  atk.required = arksim::TypeFlags::Enemy;
+  atk.range_tiles = range->offsets;
+  atk.range_tiles_relative = true;
+  atk.range_tiles_rotate_with_dir = true;
+  atk.arranger.max_targets = 1;
+  atk.arranger.relationship = arksim::TargetArranger::Relationship::Hostile;
+  atk.base_interval = 1;
+  atk.base_pre = 0;
+  atk.base_post = 0;
+
+  arksim::Entity fired{};
+  atk.OnFire.add(1, 0, [&](arksim::World&, arksim::SimState*, arksim::Entity, std::span<const arksim::Entity> ts, arksim::Attack&) {
+    REQUIRE(ts.size() == 1);
+    fired = ts[0];
+  });
+
+  world.add<arksim::Attack>(attacker, atk);
+
+  // 1st frame: spatial rebuild + scan -> enters PreDelay.
+  sim.step_frame(ctx);
+  // 2nd frame: PreDelay completes and fires.
+  sim.step_frame(ctx);
+
+  CHECK(fired.entity_id == target.entity_id);
+}
+
+TEST_CASE("Attack tiles range relative rotates with Position.dir") {
+  namespace fs = std::filesystem;
+
+  const fs::path repo_root = fs::path(__FILE__).parent_path().parent_path();
+  const fs::path range_path = repo_root / "data" / "ArknightsGameData" / "zh_CN" / "gamedata" / "excel" / "range_table.json";
+
+  if (!fs::exists(range_path)) {
+    // Submodule not initialized in this environment.
+    return;
+  }
+
+  arksim::ArknightsRangeTable table;
+  REQUIRE(arksim::load_arknights_range_table_file(range_path, table));
+  const auto* range = table.find("1-1");
+  REQUIRE(range != nullptr);
+
+  arksim::SimState sim(1);
+  sim.set_tick_rate(1, 10); // 0.1s
+  arksim::SimContext ctx;
+  ctx.reset_map(5, 5);
+
+  arksim::World& world = sim.world();
+  const arksim::TileCoord src_tile{2, 2};
+  const arksim::TileCoord tgt_tile{2, 3}; // forward when facing up
+
+  arksim::Entity attacker = world.create();
+  arksim::Position ap;
+  ap.pos = arksim::Map::tile_center(src_tile);
+  ap.dir = arksim::vec<arksim::f32>{0.0f, 1.0f};
+  world.add<arksim::Position>(attacker, ap);
+
+  arksim::Entity target = world.create();
+  world.add<arksim::Position>(target, arksim::Position{arksim::Map::tile_center(tgt_tile)});
+  world.add<arksim::Area>(target, arksim::Area{arksim::Area::Type::Circle, arksim::vec<arksim::f32>{0.1f, 0.0f}});
+  world.add<arksim::Spatial>(target, arksim::Spatial{arksim::TypeFlags::Enemy | arksim::TypeFlags::Normal});
+
+  arksim::Attack atk;
+  atk.scan_interval = 0;
+  atk.range_kind = arksim::TargetRange::Kind::Tiles;
+  atk.range_grid = arksim::TargetRange::Grid::Center;
+  atk.required = arksim::TypeFlags::Enemy;
+  atk.range_tiles = range->offsets;
+  atk.range_tiles_relative = true;
+  atk.range_tiles_rotate_with_dir = true;
+  atk.arranger.max_targets = 1;
+  atk.arranger.relationship = arksim::TargetArranger::Relationship::Hostile;
+  atk.base_interval = 1;
+  atk.base_pre = 0;
+  atk.base_post = 0;
+
+  arksim::Entity fired{};
+  atk.OnFire.add(1, 0, [&](arksim::World&, arksim::SimState*, arksim::Entity, std::span<const arksim::Entity> ts, arksim::Attack&) {
+    REQUIRE(ts.size() == 1);
+    fired = ts[0];
+  });
+
+  world.add<arksim::Attack>(attacker, atk);
+
+  sim.step_frame(ctx);
+  sim.step_frame(ctx);
+
+  CHECK(fired.entity_id == target.entity_id);
+}
+
 TEST_CASE("Load ArknightsGameData level_a001_01 map and validate ground pathing") {
   namespace fs = std::filesystem;
 
@@ -1897,6 +2103,28 @@ TEST_CASE("Load ArknightsGameData level_a001_01 map and validate ground pathing"
     const arksim::PathMap& pm = ctx.path_cache.get_ground(end_tile, route.allow_diagonal_move);
     CHECK(pm.dist(route.start_tile) != arksim::PathMap::kInf);
   }
+}
+
+TEST_CASE("Load ArknightsGameData level_a001_01 enemyDbRefs override maxHp") {
+  namespace fs = std::filesystem;
+
+  const fs::path repo_root = fs::path(__FILE__).parent_path().parent_path();
+  const fs::path level_path =
+      repo_root / "data" / "ArknightsGameData" / "zh_CN" / "gamedata" / "levels" / "activities" / "a001" / "level_a001_01.json";
+
+  if (!fs::exists(level_path)) {
+    // Submodule not initialized in this environment.
+    return;
+  }
+
+  arksim::ArknightsLevel level;
+  REQUIRE(arksim::load_arknights_level_file(level_path, level));
+
+  const auto* ref = level.find_enemy_db_ref("enemy_1027_mob");
+  REQUIRE(ref != nullptr);
+  CHECK(ref->level == 0);
+  REQUIRE(ref->overridden.max_hp.has_value());
+  CHECK(*ref->overridden.max_hp == doctest::Approx(1850.0));
 }
 
 TEST_CASE("ArknightsRoute instantiate randomizeReachOffset uses RNG at spawn-time") {
@@ -1991,4 +2219,214 @@ TEST_CASE("StageRuntime spawns ArknightsLevel spawns at tick 0") {
   const auto* stage = sim.world().try_get<arksim::StageRuntime>(sim.world_entity());
   REQUIRE(stage != nullptr);
   CHECK(stage->next_spawn == expected_at_0);
+}
+
+TEST_CASE("StageRuntime applies enemy_database stats and enemyDbRefs overrides") {
+  namespace fs = std::filesystem;
+
+  const fs::path repo_root = fs::path(__FILE__).parent_path().parent_path();
+  const fs::path level_path =
+      repo_root / "data" / "ArknightsGameData" / "zh_CN" / "gamedata" / "levels" / "activities" / "a001" / "level_a001_01.json";
+  const fs::path enemy_db_path =
+      repo_root / "data" / "ArknightsGameData" / "zh_CN" / "gamedata" / "levels" / "enemydata" / "enemy_database.json";
+
+  if (!fs::exists(level_path) || !fs::exists(enemy_db_path)) {
+    // Submodule not initialized in this environment.
+    return;
+  }
+
+  arksim::ArknightsLevel level;
+  REQUIRE(arksim::load_arknights_level_file(level_path, level));
+
+  arksim::ArknightsEnemyDatabase enemies;
+  REQUIRE(arksim::load_arknights_enemy_database_file(enemy_db_path, enemies));
+
+  const std::size_t expected_at_0 =
+      static_cast<std::size_t>(std::count_if(level.spawns.begin(), level.spawns.end(), [](const arksim::ArknightsSpawnEvent& ev) {
+        return ev.spawn_tick == 0;
+      }));
+  REQUIRE(expected_at_0 > 0);
+
+  arksim::SimState sim(123);
+  sim.set_tick_rate(1, 10); // 0.1s
+  arksim::SimContext ctx;
+
+  arksim::start_arknights_stage(sim, ctx, level, enemies);
+  sim.step_frame(ctx);
+
+  std::vector<arksim::Entity> spawned;
+  sim.world().each<arksim::HP>([&](arksim::Entity e, arksim::HP&) { spawned.push_back(e); });
+  CHECK(spawned.size() == expected_at_0);
+
+  // level_a001_01 tick-0 spawns are enemy_1027_mob, whose stage override bumps maxHp to 1850.
+  for (arksim::Entity e : spawned) {
+    const auto& hp = sim.world().get<arksim::HP>(e);
+    CHECK(hp.total_hp.value() == doctest::Approx(1850.0));
+    CHECK(sim.world().has<arksim::DefStats>(e));
+    CHECK(sim.world().has<arksim::AttackPower>(e));
+    CHECK(sim.world().has<arksim::Attack>(e));
+    CHECK(arksim::has_flags(sim.world().get<arksim::Spatial>(e).flags, arksim::TypeFlags::Melee));
+    CHECK(sim.world().get<arksim::Attack>(e).arranger.primary == arksim::TargetArranger::Primary::CreatedTimeDesc);
+    CHECK(static_cast<double>(sim.world().get<arksim::AttackPower>(e).atk) == doctest::Approx(250.0));
+  }
+}
+
+TEST_CASE("StageRuntime enemy Attack emits damage to nearby ally") {
+  namespace fs = std::filesystem;
+
+  const fs::path repo_root = fs::path(__FILE__).parent_path().parent_path();
+  const fs::path enemy_db_path =
+      repo_root / "data" / "ArknightsGameData" / "zh_CN" / "gamedata" / "levels" / "enemydata" / "enemy_database.json";
+
+  if (!fs::exists(enemy_db_path)) {
+    // Submodule not initialized in this environment.
+    return;
+  }
+
+  arksim::ArknightsEnemyDatabase enemies;
+  REQUIRE(arksim::load_arknights_enemy_database_file(enemy_db_path, enemies));
+
+  arksim::ArknightsLevel level;
+  level.map = arksim::Map(10, 10);
+
+  arksim::ArknightsRoute route;
+  route.valid = true;
+  route.mode = arksim::MoveMode::Ground;
+  route.move_multiplier = 0.0f; // keep the unit stationary for this test
+  route.start_tile = arksim::TileCoord{2, 2};
+  route.end_tile = arksim::TileCoord{0, 0};
+  route.spawn_offset = arksim::vec<arksim::f32>{0.0f, 0.0f};
+  route.spawn_random_range = arksim::vec<arksim::f32>{0.0f, 0.0f};
+  level.routes.push_back(route);
+
+  arksim::ArknightsSpawnEvent ev;
+  ev.spawn_tick = 0;
+  ev.wave_start_tick = 0;
+  ev.fragment_start_tick = 0;
+  ev.route_index = 0;
+  ev.key = "enemy_1027_mob";
+  level.spawns.push_back(ev);
+
+  arksim::SimState sim(123);
+  sim.set_tick_rate(1, 10); // 0.1s
+  arksim::SimContext ctx;
+
+  arksim::start_arknights_stage(sim, ctx, level, enemies);
+
+  // Place a target ally at the enemy spawn point.
+  arksim::World& world = sim.world();
+  const arksim::vec<arksim::f32> spawn_pos = arksim::Map::tile_center(route.start_tile);
+
+  arksim::Entity ally = world.create();
+  world.add<arksim::Position>(ally, arksim::Position{spawn_pos});
+  world.add<arksim::Area>(ally, arksim::Area{arksim::Area::Type::Circle, arksim::vec<arksim::f32>{0.35f, 0.0f}});
+  world.add<arksim::Spatial>(ally, arksim::Spatial{arksim::TypeFlags::Ally | arksim::TypeFlags::Normal});
+
+  arksim::HP hp;
+  hp.total_hp = arksim::BuffNum(1000.0);
+  hp.ratio = 1.0;
+  world.add<arksim::HP>(ally, hp);
+  arksim::ensure_defstats(world, ally);
+
+  // 1st frame: spawn enemy + scan target (enters PreDelay).
+  sim.step_frame(ctx);
+
+  // Enemy should exist and have Attack configured from enemy_database.
+  std::vector<arksim::Entity> attackers;
+  world.each<arksim::Attack>([&](arksim::Entity e, arksim::Attack&) { attackers.push_back(e); });
+  REQUIRE(attackers.size() == 1);
+  const auto& atk = world.get<arksim::Attack>(attackers[0]);
+  CHECK(atk.base_interval == (arksim::Tick{1} << 31)); // 2.0s
+  CHECK(atk.atk_speed == doctest::Approx(0.0f));       // attackSpeed=100
+
+  // 2nd frame: PreDelay completes and emits Damage effect -> HP should drop.
+  sim.step_frame(ctx);
+  CHECK(world.get<arksim::HP>(ally).ratio == doctest::Approx(0.75));
+}
+
+TEST_CASE("StageRuntime enemy Attack prioritizes blocker when blocked") {
+  namespace fs = std::filesystem;
+
+  const fs::path repo_root = fs::path(__FILE__).parent_path().parent_path();
+  const fs::path enemy_db_path =
+      repo_root / "data" / "ArknightsGameData" / "zh_CN" / "gamedata" / "levels" / "enemydata" / "enemy_database.json";
+
+  if (!fs::exists(enemy_db_path)) {
+    // Submodule not initialized in this environment.
+    return;
+  }
+
+  arksim::ArknightsEnemyDatabase enemies;
+  REQUIRE(arksim::load_arknights_enemy_database_file(enemy_db_path, enemies));
+
+  arksim::ArknightsLevel level;
+  level.map = arksim::Map(10, 10);
+
+  arksim::ArknightsRoute route;
+  route.valid = true;
+  route.mode = arksim::MoveMode::Ground;
+  route.move_multiplier = 0.0f; // keep the unit stationary for this test
+  route.start_tile = arksim::TileCoord{2, 2};
+  route.end_tile = arksim::TileCoord{0, 0};
+  route.spawn_offset = arksim::vec<arksim::f32>{0.0f, 0.0f};
+  route.spawn_random_range = arksim::vec<arksim::f32>{0.0f, 0.0f};
+  level.routes.push_back(route);
+
+  arksim::ArknightsSpawnEvent ev;
+  ev.spawn_tick = 0;
+  ev.wave_start_tick = 0;
+  ev.fragment_start_tick = 0;
+  ev.route_index = 0;
+  ev.key = "enemy_1027_mob";
+  level.spawns.push_back(ev);
+
+  arksim::SimState sim(123);
+  sim.set_tick_rate(1, 10); // 0.1s
+  arksim::SimContext ctx;
+
+  arksim::start_arknights_stage(sim, ctx, level, enemies);
+
+  arksim::World& world = sim.world();
+  const arksim::vec<arksim::f32> spawn_pos = arksim::Map::tile_center(route.start_tile);
+
+  // Create 2 allies in range. The last created one would normally be targeted first (CreatedTimeDesc).
+  arksim::Entity blocker = world.create();
+  world.add<arksim::Position>(blocker, arksim::Position{spawn_pos});
+  world.add<arksim::Area>(blocker, arksim::Area{arksim::Area::Type::Circle, arksim::vec<arksim::f32>{0.35f, 0.0f}});
+  world.add<arksim::Spatial>(blocker, arksim::Spatial{arksim::TypeFlags::Ally | arksim::TypeFlags::Normal});
+  world.add<arksim::Blocker>(blocker, arksim::Blocker{});
+  arksim::HP hp_blocker;
+  hp_blocker.total_hp = arksim::BuffNum(1000.0);
+  hp_blocker.ratio = 1.0;
+  world.add<arksim::HP>(blocker, hp_blocker);
+  arksim::ensure_defstats(world, blocker);
+
+  arksim::Entity last_deployed = world.create();
+  world.add<arksim::Position>(last_deployed, arksim::Position{spawn_pos});
+  world.add<arksim::Area>(last_deployed,
+                          arksim::Area{arksim::Area::Type::Circle, arksim::vec<arksim::f32>{0.35f, 0.0f}});
+  world.add<arksim::Spatial>(last_deployed, arksim::Spatial{arksim::TypeFlags::Ally | arksim::TypeFlags::Normal});
+  arksim::HP hp_last;
+  hp_last.total_hp = arksim::BuffNum(1000.0);
+  hp_last.ratio = 1.0;
+  world.add<arksim::HP>(last_deployed, hp_last);
+  arksim::ensure_defstats(world, last_deployed);
+
+  // 1st frame: spawn enemy + scan targets (enters PreDelay).
+  sim.step_frame(ctx);
+
+  // Mark the enemy as blocked by `blocker` before it fires.
+  std::vector<arksim::Entity> attackers;
+  world.each<arksim::Attack>([&](arksim::Entity e, arksim::Attack&) { attackers.push_back(e); });
+  REQUIRE(attackers.size() == 1);
+  auto* rm = world.try_get<arksim::RouteMove>(attackers[0]);
+  REQUIRE(rm != nullptr);
+  rm->blocked_by = blocker;
+  CHECK(rm->blocked_by.entity_id == blocker.entity_id);
+
+  // 2nd frame: attack fires; despite CreatedTimeDesc, it should hit the blocker.
+  sim.step_frame(ctx);
+  CHECK(world.get<arksim::RouteMove>(attackers[0]).blocked_by.entity_id == blocker.entity_id);
+  CHECK(world.get<arksim::HP>(blocker).ratio == doctest::Approx(0.75));
+  CHECK(world.get<arksim::HP>(last_deployed).ratio == doctest::Approx(1.0));
 }
