@@ -8,9 +8,10 @@
             "binaryDir": "${sourceDir}/out/build/${presetName}",
             "installDir": "${sourceDir}/out/install/${presetName}",
             "cacheVariables": {
-                "CMAKE_C_COMPILER": "D:/vs community/VC/Tools/MSVC/14.50.35717/bin/Hostx64/x64/cl.exe",
-                "CMAKE_CXX_COMPILER": "D:/vs community/VC/Tools/MSVC/14.50.35717/bin/Hostx64/x64/cl.exe",
-                "CMAKE_TOOLCHAIN_FILE": "D:/vs community/VC/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                "CMAKE_C_COMPILER": "$env{VCToolsInstallDir}bin/Hostx64/x64/cl.exe",
+                "CMAKE_CXX_COMPILER": "$env{VCToolsInstallDir}bin/Hostx64/x64/cl.exe",
+                "CMAKE_MAKE_PROGRAM": "$env{VSINSTALLDIR}Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe",
+                "CMAKE_TOOLCHAIN_FILE": "$env{VSINSTALLDIR}VC/vcpkg/scripts/buildsystems/vcpkg.cmake",
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
             },
             "condition": {

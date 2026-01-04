@@ -14,8 +14,8 @@ Recommended `.clangd` settings:
 ## Visual Studio
 The repository assumes VS toolchains are available. If PATH does not include cmake/ctest, use:
 ```
-D:\vs community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe
-D:\vs community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\ctest.exe
+$Env:VSINSTALLDIR\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe
+$Env:VSINSTALLDIR\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\ctest.exe
 ```
 
 ## vcpkg

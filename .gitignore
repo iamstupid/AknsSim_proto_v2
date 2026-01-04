@@ -8,6 +8,7 @@
 /vcpkg_installed/
 /.vs/
 /.vscode/
+/.claude/
 *.user
 *.suo
 *.vcxproj*
